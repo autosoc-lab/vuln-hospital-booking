@@ -13,6 +13,14 @@ python run.py
 
 브라우저에서 `http://localhost:5000`으로 접속합니다.
 
+## Docker로 실행
+
+```bash
+docker compose up --build
+```
+
+브라우저에서 `http://localhost:5000`으로 접속합니다.
+
 ## 상태 확인
 
 ```bash

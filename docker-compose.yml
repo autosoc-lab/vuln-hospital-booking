@@ -1,0 +1,10 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      APP_NAME: "Vulnerable Hospital Booking"
+      SECRET_KEY: "dev-secret-key-change-me"
+      FLASK_DEBUG: "1"
+      PORT: "5000"

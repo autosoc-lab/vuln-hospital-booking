@@ -19,12 +19,18 @@ python run.py
 docker compose up --build
 ```
 
-브라우저에서 `http://localhost:5000`으로 접속합니다.
+브라우저에서 `http://localhost:5001`으로 접속합니다.
 
 ## 상태 확인
 
 ```bash
 curl http://localhost:5000/health/live
+```
+
+Docker로 실행 중이라면 다음 주소로 확인합니다.
+
+```bash
+curl http://localhost:5001/health/live
 ```
 
 정상 응답:

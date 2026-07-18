@@ -13,6 +13,9 @@
         <div class="nav-links">
           {% if g.current_user %}
             <span>{{ g.current_user.full_name }}</span>
+            <form class="nav-form" method="post" action="{{ url_for('auth.logout') }}">
+              <button type="submit">로그아웃</button>
+            </form>
           {% else %}
             <a href="{{ url_for('auth.login_form') }}">로그인</a>
           {% endif %}

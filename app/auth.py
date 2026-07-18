@@ -52,6 +52,13 @@ def create_user_session(user, request):
     return user_session
 
 
+def revoke_current_session():
+    if g.current_session:
+        g.current_session.revoked_at = utc_now()
+        db.session.commit()
+    session.clear()
+
+
 def load_logged_in_user():
     g.current_user = None
     g.current_session = None

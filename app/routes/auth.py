@@ -1,6 +1,6 @@
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 
-from app.auth import authenticate_user, create_user_session
+from app.auth import authenticate_user, create_user_session, login_required, revoke_current_session
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -22,4 +22,12 @@ def login():
 
     create_user_session(user, request)
     flash("로그인되었습니다.", "success")
+    return redirect(url_for("main.index"))
+
+
+@auth_bp.post("/logout")
+@login_required
+def logout():
+    revoke_current_session()
+    flash("로그아웃되었습니다.", "success")
     return redirect(url_for("main.index"))

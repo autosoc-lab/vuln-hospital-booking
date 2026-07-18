@@ -46,6 +46,21 @@ body {
   gap: 16px;
 }
 
+.nav-form {
+  margin: 0;
+}
+
+.nav-form button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 0;
+}
+
 .nav-links a,
 .nav-links span {
   color: var(--muted);

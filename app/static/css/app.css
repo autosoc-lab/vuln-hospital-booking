@@ -46,7 +46,8 @@ body {
   gap: 16px;
 }
 
-.nav-links a {
+.nav-links a,
+.nav-links span {
   color: var(--muted);
   font-size: 14px;
   font-weight: 700;

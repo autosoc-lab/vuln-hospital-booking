@@ -11,7 +11,11 @@
       <nav class="nav">
         <a class="brand" href="{{ url_for('main.index') }}">{{ app_name }}</a>
         <div class="nav-links">
-          <a href="{{ url_for('auth.login_form') }}">로그인</a>
+          {% if g.current_user %}
+            <span>{{ g.current_user.full_name }}</span>
+          {% else %}
+            <a href="{{ url_for('auth.login_form') }}">로그인</a>
+          {% endif %}
         </div>
       </nav>
     </header>

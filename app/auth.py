@@ -1,13 +1,13 @@
-from datetime import timezone, timedelta
+from datetime import timedelta, timezone
 from functools import wraps
 from hashlib import sha256
 import secrets
 
-from flask import g, redirect, session, url_for
+from flask import abort, g, redirect, session, url_for
 from werkzeug.security import check_password_hash
 
 from app.db import db
-from app.models import User, UserSession, utc_now
+from app.models import ROLE_ADMIN, ROLE_STAFF, User, UserSession, utc_now
 
 SESSION_DAYS = 1
 
@@ -93,3 +93,26 @@ def login_required(view):
         return view(**kwargs)
 
     return wrapped_view
+
+
+def role_required(*allowed_roles):
+    def decorator(view):
+        @wraps(view)
+        def wrapped_view(**kwargs):
+            if not g.current_user:
+                return redirect(url_for("auth.login_form"))
+            if g.current_user.role not in allowed_roles:
+                abort(403)
+            return view(**kwargs)
+
+        return wrapped_view
+
+    return decorator
+
+
+def admin_required(view):
+    return role_required(ROLE_ADMIN)(view)
+
+
+def staff_or_admin_required(view):
+    return role_required(ROLE_STAFF, ROLE_ADMIN)(view)

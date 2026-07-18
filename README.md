@@ -24,6 +24,29 @@ docker compose up --build
 
 브라우저에서 `http://localhost:5001`으로 접속합니다.
 
+## 데이터베이스 초기화
+
+Docker 환경에서 테이블을 생성합니다.
+
+```bash
+docker compose exec web flask --app run init-db
+```
+
+초기 실습 데이터를 삽입합니다.
+
+```bash
+docker compose exec web flask --app run seed-db
+```
+
+`seed-db`는 기존 사용자 데이터가 있으면 중복 삽입하지 않고 건너뜁니다.
+
+로컬 Flask 실행 환경에서는 다음 명령을 사용합니다.
+
+```bash
+flask --app run init-db
+flask --app run seed-db
+```
+
 ## 상태 확인
 
 ```bash

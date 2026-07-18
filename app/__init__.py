@@ -1,5 +1,6 @@
 from flask import Flask
 
+from app.cli import register_cli_commands
 from app.config import Config
 from app.db import db
 from app.routes import main_bp
@@ -12,5 +13,6 @@ def create_app(config_class=Config):
     db.init_app(app)
 
     app.register_blueprint(main_bp)
+    register_cli_commands(app)
 
     return app

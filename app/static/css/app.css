@@ -75,9 +75,17 @@ body {
   padding: 64px 24px;
 }
 
-.intro,
-.auth-panel {
+.intro {
   max-width: 680px;
+}
+
+.auth-panel {
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.auth-panel .section-heading {
+  text-align: center;
 }
 
 .section-heading {
@@ -107,7 +115,7 @@ p {
 .form {
   display: grid;
   gap: 12px;
-  max-width: 420px;
+  width: 100%;
 }
 
 .form label {
@@ -142,8 +150,8 @@ p {
 .flash-list {
   display: grid;
   gap: 8px;
-  margin-bottom: 24px;
-  max-width: 680px;
+  margin: 0 auto 24px;
+  max-width: 420px;
 }
 
 .flash {
@@ -154,6 +162,7 @@ p {
   color: var(--text);
   font-size: 14px;
   padding: 10px 12px;
+  text-align: center;
 }
 
 .flash-error {

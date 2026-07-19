@@ -155,6 +155,68 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.get_json()["appointments"]), 2)
 
+    def test_admin_dashboard_requires_admin_role(self):
+        self.login("staff", "StaffPass123!")
+
+        response = self.client.get("/admin")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_dashboard_returns_summary_counts(self):
+        self.login("admin", "AdminPass123!")
+
+        response = self.client.get("/admin")
+
+        self.assertEqual(response.status_code, 200)
+        counts = response.get_json()["dashboard"]["counts"]
+        self.assertEqual(counts["users"], 7)
+        self.assertEqual(counts["patients"], 2)
+        self.assertEqual(counts["doctors"], 3)
+        self.assertEqual(counts["staff"], 1)
+        self.assertEqual(counts["admins"], 1)
+        self.assertEqual(counts["appointments"], 2)
+        self.assertEqual(counts["documents"], 3)
+        self.assertEqual(counts["active_sessions"], 1)
+
+    def test_admin_can_view_all_appointments_from_admin_api(self):
+        self.login("admin", "AdminPass123!")
+
+        response = self.client.get("/admin/appointments")
+
+        self.assertEqual(response.status_code, 200)
+        appointments = response.get_json()["appointments"]
+        self.assertEqual(len(appointments), 2)
+        self.assertEqual(
+            {appointment["patient"]["username"] for appointment in appointments},
+            {"alice", "bob"},
+        )
+
+    def test_admin_can_view_all_documents_from_admin_api(self):
+        self.login("admin", "AdminPass123!")
+
+        response = self.client.get("/admin/documents")
+
+        self.assertEqual(response.status_code, 200)
+        documents = response.get_json()["documents"]
+        self.assertEqual(len(documents), 3)
+        self.assertEqual(
+            {document["owner_patient"]["username"] for document in documents},
+            {"alice", "bob"},
+        )
+
+    def test_admin_can_view_security_events(self):
+        self.login("admin", "AdminPass123!")
+
+        response = self.client.get("/admin/security-events")
+
+        self.assertEqual(response.status_code, 200)
+        events = response.get_json()["security_events"]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event_type"], "SESSION_CREATED")
+        self.assertEqual(events[0]["user"]["username"], "admin")
+        self.assertEqual(events[0]["user"]["role"], "ADMIN")
+        self.assertIsNotNone(events[0]["source_ip"])
+
     def test_patient_can_create_appointment(self):
         self.login("alice", "PatientPass123!")
         with self.app.app_context():

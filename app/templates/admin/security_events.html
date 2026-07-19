@@ -19,7 +19,7 @@
           <th>사용자</th>
           <th>역할</th>
           <th>IP</th>
-          <th>세션</th>
+          <th>User-Agent 해시</th>
         </tr>
       </thead>
       <tbody>
@@ -30,7 +30,7 @@
             <td>{{ event.user.username }}</td>
             <td>{{ event.user.role }}</td>
             <td>{{ event.source_ip or "-" }}</td>
-            <td>{{ event.session_id }}</td>
+            <td><span class="table-muted">{{ event.user_agent_hash or "-" }}</span></td>
           </tr>
         {% else %}
           <tr>

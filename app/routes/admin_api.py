@@ -49,7 +49,6 @@ def serialize_security_event(event_type, occurred_at, user_session):
     return {
         "event_type": event_type,
         "occurred_at": isoformat(occurred_at),
-        "session_id": user_session.id,
         "source_ip": user_session.source_ip,
         "user_agent_hash": user_session.user_agent_hash,
         "role_snapshot": user_session.role_snapshot,

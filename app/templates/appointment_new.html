@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="section-heading">
+    <p class="eyebrow">New Appointment</p>
+    <h1>새 예약</h1>
+    <p>예약 가능한 진료 시간을 선택하고 증상을 입력합니다.</p>
+  </section>
+
+  <form class="form wide-form" method="post" action="{{ url_for('user_pages.new_appointment') }}">
+    <label for="slot_public_id">진료 시간</label>
+    <select id="slot_public_id" name="slot_public_id" required>
+      <option value="">시간을 선택하세요</option>
+      {% for slot in slots %}
+        <option value="{{ slot.public_id }}" {% if slot.public_id == selected_slot %}selected{% endif %}>
+          {{ slot.starts_at.strftime("%Y-%m-%d %H:%M") }} · {{ slot.doctor.department.name }} · {{ slot.doctor.name }} {{ slot.doctor.specialty }}
+        </option>
+      {% endfor %}
+    </select>
+
+    <label for="reason">예약 사유</label>
+    <input id="reason" name="reason" type="text" maxlength="255" required>
+
+    <label for="notes">메모</label>
+    <textarea id="notes" name="notes" rows="5"></textarea>
+
+    <button type="submit">예약 생성</button>
+  </form>
+{% endblock %}

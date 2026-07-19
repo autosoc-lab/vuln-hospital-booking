@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="section-heading">
+    <p class="eyebrow">Document Detail</p>
+    <h1>{{ document.title }}</h1>
+    <p>{{ document.public_id }}</p>
+  </section>
+
+  <section class="detail-panel">
+    <dl>
+      <dt>문서 유형</dt>
+      <dd>{{ document.document_type }}</dd>
+      <dt>분류</dt>
+      <dd>{{ document.classification }}</dd>
+      <dt>소유 환자</dt>
+      <dd>{{ document.owner_patient.full_name }} · {{ document.owner_patient.email }}</dd>
+      <dt>작성 의료진</dt>
+      <dd>
+        {% if document.author_doctor %}
+          {{ document.author_doctor.name }} · {{ document.author_doctor.department.name }}
+        {% else %}
+          -
+        {% endif %}
+      </dd>
+      <dt>파일 경로</dt>
+      <dd>{{ document.file_path }}</dd>
+      <dt>파일 크기</dt>
+      <dd>{{ "{:,}".format(document.file_size) }} bytes</dd>
+      <dt>등록일</dt>
+      <dd>{{ document.created_at.strftime("%Y-%m-%d %H:%M") }}</dd>
+    </dl>
+  </section>
+{% endblock %}

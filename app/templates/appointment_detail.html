@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="section-heading">
+    <p class="eyebrow">Appointment Detail</p>
+    <h1>예약 상세</h1>
+    <p>{{ appointment.public_id }}</p>
+  </section>
+
+  <section class="detail-grid">
+    <article class="detail-panel">
+      <h2>예약 정보</h2>
+      <dl>
+        <dt>일시</dt>
+        <dd>{{ appointment.availability_slot.starts_at.strftime("%Y-%m-%d %H:%M") }}</dd>
+        <dt>환자</dt>
+        <dd>{{ appointment.user.full_name }}</dd>
+        <dt>의료진</dt>
+        <dd>{{ appointment.availability_slot.doctor.name }} · {{ appointment.availability_slot.doctor.specialty }}</dd>
+        <dt>상태</dt>
+        <dd>{{ appointment.status }}</dd>
+        <dt>사유</dt>
+        <dd>{{ appointment.reason }}</dd>
+        <dt>메모</dt>
+        <dd>{{ appointment.notes or "-" }}</dd>
+      </dl>
+    </article>
+
+    <article class="detail-panel">
+      <h2>상태 이력</h2>
+      <ol class="history-list">
+        {% for item in history %}
+          <li>
+            <strong>{{ item.to_status }}</strong>
+            <span>{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
+            <p>{{ item.reason or "-" }}{% if item.changed_by_user %} · {{ item.changed_by_user.full_name }}{% endif %}</p>
+          </li>
+        {% else %}
+          <li>상태 이력이 없습니다.</li>
+        {% endfor %}
+      </ol>
+    </article>
+  </section>
+{% endblock %}

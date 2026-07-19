@@ -1,11 +1,27 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="section-heading">
-    <p class="eyebrow">Documents</p>
-    <h1>의료 문서</h1>
-    <p>환자 문서와 분류 정보를 조회합니다.</p>
+  <section class="section-heading split-heading">
+    <div>
+      <p class="eyebrow">Documents</p>
+      <h1>의료 문서</h1>
+      <p>환자 문서와 분류 정보를 조회하고 테스트 문서를 업로드합니다.</p>
+    </div>
+    <a class="button-link" href="{{ url_for('user_pages.upload_document') }}">문서 업로드</a>
   </section>
+
+  <form class="filter-form" method="get" action="{{ url_for('user_pages.documents') }}">
+    <label>
+      검색어
+      <input name="q" type="search" value="{{ search_term }}" placeholder="문서명, 문서 유형">
+    </label>
+    <label>
+      문서 유형
+      <input name="document_type" value="{{ document_type }}" placeholder="예: 진료의뢰서">
+    </label>
+    <button type="submit">검색</button>
+    <a class="secondary-link" href="{{ url_for('user_pages.documents') }}">초기화</a>
+  </form>
 
   <section class="table-wrap">
     <table>

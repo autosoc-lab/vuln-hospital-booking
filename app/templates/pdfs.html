@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="section-heading split-heading">
+    <div>
+      <p class="eyebrow">PDF</p>
+      <h1>생성 PDF</h1>
+      <p>사용자 입력으로 생성한 PDF를 조회하고 다운로드합니다.</p>
+    </div>
+    <a class="button-link" href="{{ url_for('user_pages.new_pdf') }}">PDF 생성</a>
+  </section>
+
+  <section class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>파일명</th>
+          <th>생성자</th>
+          <th>생성일</th>
+          <th>다운로드</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pdf in generated_pdfs %}
+          <tr>
+            <td>{{ pdf.filename }}</td>
+            <td>{{ pdf.generated_by_user.full_name }}</td>
+            <td>{{ pdf.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td><a href="{{ url_for('user_pages.download_pdf', public_id=pdf.public_id) }}">받기</a></td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="4" class="empty-cell">생성된 PDF가 없습니다.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

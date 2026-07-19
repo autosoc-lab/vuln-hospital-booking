@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="section-heading">
+    <p class="eyebrow">Render PDF</p>
+    <h1>PDF 생성</h1>
+    <p>입력한 내용을 PDF 파일로 변환합니다.</p>
+  </section>
+
+  <form class="form wide-form" method="post" action="{{ url_for('user_pages.new_pdf') }}">
+    <label for="title">제목</label>
+    <input id="title" name="title" value="진료 메모">
+
+    <label for="body">본문</label>
+    <textarea id="body" name="body" rows="10" required>복통 상담 내용
+검사 예약 안내</textarea>
+
+    <button type="submit">PDF 생성</button>
+  </form>
+{% endblock %}

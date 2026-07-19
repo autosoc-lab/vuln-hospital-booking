@@ -1,4 +1,5 @@
 import os
+from uuid import uuid4
 
 from flask import (
     Blueprint,
@@ -12,23 +13,27 @@ from flask import (
     send_file,
     url_for,
 )
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import joinedload
-from werkzeug.utils import safe_join
+from werkzeug.utils import safe_join, secure_filename
 
 from app.auth import login_required
 from app.db import db
 from app.models import (
     APPOINTMENT_STATUS_SCHEDULED,
+    CLASSIFICATION_INTERNAL,
     Appointment,
     AppointmentStatusHistory,
+    Department,
     Doctor,
     DoctorAvailabilitySlot,
+    GeneratedPdf,
     MedicalDocument,
     ROLE_ADMIN,
     ROLE_DOCTOR,
     ROLE_PATIENT,
     ROLE_STAFF,
+    User,
     utc_now,
 )
 
@@ -57,6 +62,12 @@ def can_view_document(document):
         return True
     doctor_profile = user.doctor_profile
     return bool(doctor_profile and document.author_doctor_id == doctor_profile.id)
+
+
+def can_view_generated_pdf(generated_pdf):
+    if g.current_user.role in {ROLE_ADMIN, ROLE_STAFF}:
+        return True
+    return generated_pdf.generated_by_user_id == g.current_user.id
 
 
 def appointment_query():
@@ -91,15 +102,56 @@ def get_document_or_404(public_id):
     return document
 
 
+def storage_root():
+    return os.path.abspath(current_app.config["DOCUMENT_STORAGE_ROOT"])
+
+
+def owner_from_upload_form():
+    if g.current_user.role == ROLE_PATIENT:
+        return g.current_user
+
+    patient_public_id = request.form.get("patient_public_id", "").strip()
+    if not patient_public_id:
+        return None
+
+    return db.session.scalar(
+        select(User).where(
+            User.public_id == patient_public_id,
+            User.role == ROLE_PATIENT,
+        )
+    )
+
+
 @user_pages_bp.get("/doctors")
 @login_required
 def doctors():
-    doctors = db.session.scalars(
-        select(Doctor)
-        .options(joinedload(Doctor.department), joinedload(Doctor.availability_slots))
-        .order_by(Doctor.name.asc())
-    ).unique()
-    return render_template("doctors.html", doctors=doctors)
+    search_term = request.args.get("q", "").strip()
+    department_name = request.args.get("department", "").strip()
+    query = select(Doctor).options(
+        joinedload(Doctor.department),
+        joinedload(Doctor.availability_slots),
+    )
+    if search_term:
+        pattern = f"%{search_term}%"
+        query = query.where(
+            or_(
+                Doctor.name.ilike(pattern),
+                Doctor.specialty.ilike(pattern),
+                Doctor.bio.ilike(pattern),
+            )
+        )
+    if department_name:
+        query = query.where(Doctor.department.has(name=department_name))
+
+    doctors = db.session.scalars(query.order_by(Doctor.name.asc())).unique()
+    departments = db.session.scalars(select(Department).order_by(Department.name.asc())).all()
+    return render_template(
+        "doctors.html",
+        doctors=doctors,
+        departments=departments,
+        search_term=search_term,
+        department_name=department_name,
+    )
 
 
 @user_pages_bp.get("/appointments")
@@ -212,6 +264,8 @@ def appointment_detail(public_id):
 @login_required
 def documents():
     query = document_query().order_by(MedicalDocument.created_at.desc())
+    search_term = request.args.get("q", "").strip()
+    document_type = request.args.get("document_type", "").strip()
 
     if g.current_user.role == ROLE_PATIENT:
         query = query.where(MedicalDocument.owner_patient_user_id == g.current_user.id)
@@ -219,11 +273,32 @@ def documents():
         doctor_profile = g.current_user.doctor_profile
         if not doctor_profile:
             documents = []
-            return render_template("documents.html", documents=documents)
+            return render_template(
+                "documents.html",
+                documents=documents,
+                search_term=search_term,
+                document_type=document_type,
+            )
         query = query.where(MedicalDocument.author_doctor_id == doctor_profile.id)
 
+    if search_term:
+        pattern = f"%{search_term}%"
+        query = query.where(
+            or_(
+                MedicalDocument.title.ilike(pattern),
+                MedicalDocument.document_type.ilike(pattern),
+            )
+        )
+    if document_type:
+        query = query.where(MedicalDocument.document_type == document_type)
+
     documents = db.session.scalars(query).unique().all()
-    return render_template("documents.html", documents=documents)
+    return render_template(
+        "documents.html",
+        documents=documents,
+        search_term=search_term,
+        document_type=document_type,
+    )
 
 
 @user_pages_bp.get("/documents/<public_id>")
@@ -247,3 +322,142 @@ def download_document(public_id):
         as_attachment=True,
         download_name=os.path.basename(document.file_path),
     )
+
+
+@user_pages_bp.get("/profile")
+@login_required
+def profile():
+    return render_template("profile.html")
+
+
+@user_pages_bp.route("/documents/upload", methods=["GET", "POST"])
+@login_required
+def upload_document():
+    if request.method == "POST":
+        uploaded_file = request.files.get("file")
+        if not uploaded_file or not uploaded_file.filename:
+            flash("업로드할 파일을 선택해 주세요.", "error")
+            return redirect(url_for("user_pages.upload_document"))
+
+        owner = owner_from_upload_form()
+        if not owner:
+            flash("환자 ID를 입력해 주세요.", "error")
+            return redirect(url_for("user_pages.upload_document"))
+
+        original_filename = secure_filename(uploaded_file.filename)
+        if not original_filename:
+            flash("파일명이 올바르지 않습니다.", "error")
+            return redirect(url_for("user_pages.upload_document"))
+
+        stored_filename = f"{uuid4().hex}-{original_filename}"
+        relative_dir = safe_join("uploads", owner.public_id)
+        relative_path = safe_join(relative_dir, stored_filename)
+        absolute_dir = safe_join(storage_root(), relative_dir)
+        absolute_path = safe_join(storage_root(), relative_path)
+        os.makedirs(absolute_dir, exist_ok=True)
+        uploaded_file.save(absolute_path)
+
+        document = MedicalDocument(
+            owner_patient=owner,
+            author_doctor=g.current_user.doctor_profile if g.current_user.role == ROLE_DOCTOR else None,
+            title=request.form.get("title", "").strip() or original_filename,
+            document_type=request.form.get("document_type", "").strip() or "테스트 문서",
+            classification=request.form.get("classification", "").strip() or CLASSIFICATION_INTERNAL,
+            file_path=relative_path,
+            file_size=os.path.getsize(absolute_path),
+        )
+        db.session.add(document)
+        db.session.commit()
+
+        flash("문서가 업로드되었습니다.", "success")
+        return redirect(url_for("user_pages.document_detail", public_id=document.public_id))
+
+    patients = []
+    if g.current_user.role in {ROLE_ADMIN, ROLE_STAFF, ROLE_DOCTOR}:
+        patients = db.session.scalars(
+            select(User)
+            .where(User.role == ROLE_PATIENT)
+            .order_by(User.full_name.asc())
+        ).all()
+    return render_template("document_upload.html", patients=patients)
+
+
+@user_pages_bp.get("/pdfs")
+@login_required
+def pdfs():
+    query = select(GeneratedPdf).options(joinedload(GeneratedPdf.generated_by_user))
+    if g.current_user.role not in {ROLE_ADMIN, ROLE_STAFF}:
+        query = query.where(GeneratedPdf.generated_by_user_id == g.current_user.id)
+    generated_pdfs = db.session.scalars(query.order_by(GeneratedPdf.created_at.desc())).all()
+    return render_template("pdfs.html", generated_pdfs=generated_pdfs)
+
+
+@user_pages_bp.route("/pdfs/new", methods=["GET", "POST"])
+@login_required
+def new_pdf():
+    if request.method == "POST":
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+
+        title = request.form.get("title", "generated-document").strip()[:120]
+        body = request.form.get("body", "").strip()
+        if not body:
+            flash("PDF 본문을 입력해 주세요.", "error")
+            return redirect(url_for("user_pages.new_pdf"))
+
+        filename_base = secure_filename(title) or "generated-document"
+        filename = f"{filename_base[:80]}-{uuid4().hex}.pdf"
+        relative_dir = safe_join("generated_pdfs", g.current_user.public_id)
+        relative_path = safe_join(relative_dir, filename)
+        absolute_dir = safe_join(storage_root(), relative_dir)
+        absolute_path = safe_join(storage_root(), relative_path)
+        os.makedirs(absolute_dir, exist_ok=True)
+
+        pdf = canvas.Canvas(absolute_path, pagesize=A4)
+        _, height = A4
+        y = height - 72
+        pdf.setTitle(title)
+        pdf.setFont("Helvetica-Bold", 14)
+        pdf.drawString(72, y, title)
+        y -= 32
+        pdf.setFont("Helvetica", 10)
+        for raw_line in body.splitlines():
+            line = raw_line[:110]
+            if y < 72:
+                pdf.showPage()
+                pdf.setFont("Helvetica", 10)
+                y = height - 72
+            pdf.drawString(72, y, line)
+            y -= 16
+        pdf.save()
+
+        generated_pdf = GeneratedPdf(
+            generated_by_user=g.current_user,
+            filename=filename,
+            storage_path=relative_path,
+        )
+        db.session.add(generated_pdf)
+        db.session.commit()
+
+        flash("PDF가 생성되었습니다.", "success")
+        return redirect(url_for("user_pages.pdfs"))
+
+    return render_template("pdf_new.html")
+
+
+@user_pages_bp.get("/pdfs/<public_id>/download")
+@login_required
+def download_pdf(public_id):
+    generated_pdf = db.session.scalar(
+        select(GeneratedPdf).where(GeneratedPdf.public_id == public_id)
+    )
+    if not generated_pdf:
+        abort(404)
+    if not can_view_generated_pdf(generated_pdf):
+        abort(403)
+
+    file_path = safe_join(storage_root(), generated_pdf.storage_path)
+    if not file_path or not os.path.isfile(file_path):
+        abort(404)
+
+    return send_file(file_path, as_attachment=True, download_name=generated_pdf.filename)

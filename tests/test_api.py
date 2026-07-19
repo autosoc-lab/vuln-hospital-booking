@@ -55,6 +55,24 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(payload["profile"]["username"], "alice")
         self.assertEqual(payload["profile"]["role"], "PATIENT")
 
+    def test_profile_page_is_available_to_logged_in_users(self):
+        self.login("alice", "PatientPass123!")
+
+        response = self.client.get("/profile")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("내 프로필".encode(), response.data)
+        self.assertIn("alice".encode(), response.data)
+
+    def test_doctors_page_supports_search(self):
+        self.login("alice", "PatientPass123!")
+
+        response = self.client.get("/doctors?q=소화기")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("김도현".encode(), response.data)
+        self.assertNotIn("이서연".encode(), response.data)
+
     def test_doctors_search_filters_by_name_or_specialty(self):
         self.login("alice", "PatientPass123!")
 
@@ -232,6 +250,53 @@ class ApiTestCase(unittest.TestCase):
             response.get_json()["checks"],
             {"database": "ok", "storage": "ok"},
         )
+
+    def test_documents_page_supports_search(self):
+        self.login("staff", "StaffPass123!")
+
+        response = self.client.get("/documents?q=정형외과")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("정형외과 안내문".encode(), response.data)
+        self.assertNotIn("소화기내과 진료의뢰서".encode(), response.data)
+
+    def test_document_upload_page_creates_document(self):
+        self.login("alice", "PatientPass123!")
+
+        response = self.client.post(
+            "/documents/upload",
+            data={
+                "file": (io.BytesIO(b"screen upload"), "screen.txt"),
+                "title": "화면 업로드",
+                "document_type": "테스트 문서",
+                "classification": "INTERNAL",
+            },
+            content_type="multipart/form-data",
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            document = db.session.scalar(
+                select(MedicalDocument).where(MedicalDocument.title == "화면 업로드")
+            )
+            self.assertIsNotNone(document)
+
+    def test_pdf_pages_create_and_list_pdf(self):
+        self.login("alice", "PatientPass123!")
+
+        create_response = self.client.post(
+            "/pdfs/new",
+            data={"title": "화면 PDF", "body": "화면에서 생성한 PDF"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(create_response.status_code, 302)
+        list_response = self.client.get("/pdfs")
+        self.assertEqual(list_response.status_code, 200)
+        self.assertIn("PDF 생성".encode(), list_response.data)
+        with self.app.app_context():
+            self.assertEqual(db.session.query(GeneratedPdf).count(), 3)
 
 
 if __name__ == "__main__":

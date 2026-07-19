@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="section-heading">
+    <p class="eyebrow">Profile</p>
+    <h1>내 프로필</h1>
+    <p>로그인한 사용자 계정과 역할 정보를 확인합니다.</p>
+  </section>
+
+  <section class="detail-panel profile-panel">
+    <dl>
+      <dt>이름</dt>
+      <dd>{{ g.current_user.full_name }}</dd>
+      <dt>아이디</dt>
+      <dd>{{ g.current_user.username }}</dd>
+      <dt>역할</dt>
+      <dd><span class="badge">{{ g.current_user.role }}</span></dd>
+      <dt>이메일</dt>
+      <dd>{{ g.current_user.email }}</dd>
+      {% if g.current_user.doctor_profile %}
+        <dt>진료과</dt>
+        <dd>{{ g.current_user.doctor_profile.department.name }}</dd>
+        <dt>전문 분야</dt>
+        <dd>{{ g.current_user.doctor_profile.specialty }}</dd>
+      {% endif %}
+    </dl>
+  </section>
+{% endblock %}

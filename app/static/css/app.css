@@ -252,6 +252,13 @@ p {
   margin-top: 18px;
 }
 
+.action-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+
 .slot-link {
   min-height: 34px;
   background: #334155;

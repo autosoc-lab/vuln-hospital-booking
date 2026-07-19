@@ -5,6 +5,9 @@
     <p class="eyebrow">Document Detail</p>
     <h1>{{ document.title }}</h1>
     <p>{{ document.public_id }}</p>
+    <div class="action-list">
+      <a class="button-link" href="{{ url_for('user_pages.download_document', public_id=document.public_id) }}">문서 다운로드</a>
+    </div>
   </section>
 
   <section class="detail-panel">

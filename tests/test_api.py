@@ -1,4 +1,5 @@
 import io
+import json
 import shutil
 import tempfile
 import unittest
@@ -55,6 +56,47 @@ class ApiTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["profile"]["username"], "alice")
         self.assertEqual(payload["profile"]["role"], "PATIENT")
+
+    def test_app_requests_emit_structured_event_log(self):
+        self.login("alice", "PatientPass123!")
+
+        with self.assertLogs(self.app.logger.name, level="INFO") as captured:
+            response = self.client.get(
+                "/api/profile",
+                headers={"X-Request-ID": "test-request-1"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        log_line = next(line for line in captured.output if "app_event " in line)
+        event = json.loads(log_line.split("app_event ", 1)[1])
+        self.assertEqual(event["event"], "app_request")
+        self.assertEqual(event["method"], "GET")
+        self.assertEqual(event["path"], "/api/profile")
+        self.assertEqual(event["endpoint"], "api.profile")
+        self.assertEqual(event["status_code"], 200)
+        self.assertEqual(event["user_role"], "PATIENT")
+        self.assertEqual(event["request_id"], "test-request-1")
+        self.assertIsInstance(event["duration_ms"], float)
+
+    def test_page_requests_emit_structured_event_log(self):
+        self.login("alice", "PatientPass123!")
+
+        with self.assertLogs(self.app.logger.name, level="INFO") as captured:
+            response = self.client.get("/profile")
+
+        self.assertEqual(response.status_code, 200)
+        log_line = next(line for line in captured.output if "app_event " in line)
+        event = json.loads(log_line.split("app_event ", 1)[1])
+        self.assertEqual(event["event"], "app_request")
+        self.assertEqual(event["path"], "/profile")
+        self.assertEqual(event["endpoint"], "user_pages.profile")
+        self.assertEqual(event["user_role"], "PATIENT")
+
+    def test_static_assets_do_not_emit_app_event_log(self):
+        with self.assertNoLogs(self.app.logger.name, level="INFO"):
+            response = self.client.get("/static/css/app.css")
+
+        self.assertIn(response.status_code, {200, 304})
 
     def test_profile_page_is_available_to_logged_in_users(self):
         self.login("alice", "PatientPass123!")

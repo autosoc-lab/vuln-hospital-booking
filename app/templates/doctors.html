@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="section-heading">
+    <p class="eyebrow">Doctors</p>
+    <h1>의료진</h1>
+    <p>진료과별 의료진과 예약 가능한 시간을 확인합니다.</p>
+  </section>
+
+  <section class="grid-list">
+    {% for doctor in doctors %}
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <h2>{{ doctor.name }}</h2>
+            <p>{{ doctor.department.name }} · {{ doctor.specialty }}</p>
+          </div>
+          <span class="badge">{{ doctor.availability_slots|selectattr("is_available")|list|length }} slots</span>
+        </div>
+        <p>{{ doctor.bio }}</p>
+        <div class="slot-list">
+          {% for slot in doctor.availability_slots|sort(attribute="starts_at") %}
+            {% if slot.is_available %}
+              <a class="slot-link" href="{{ url_for('user_pages.new_appointment', slot=slot.public_id) }}">
+                {{ slot.starts_at.strftime("%Y-%m-%d %H:%M") }}
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </article>
+    {% else %}
+      <p class="empty-state">등록된 의료진이 없습니다.</p>
+    {% endfor %}
+  </section>
+{% endblock %}

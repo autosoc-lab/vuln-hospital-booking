@@ -1,12 +1,121 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="intro">
-    <p class="eyebrow">SOC Training Lab</p>
-    <h1>취약 병원 예약 웹서버</h1>
-    <p>
-      공격 시나리오, 탐지 룰, 대응 플레이북을 단계적으로 연결하기 위한
-      Flask 기반 실습 애플리케이션입니다.
-    </p>
+  <section class="home-hero">
+    <div class="home-hero-copy">
+      <p class="eyebrow">Vulnerable Hospital</p>
+      <h1>예약부터 진료까지 더 쉽고 편리하게</h1>
+      <p>
+        진료과와 의료진을 확인하고 가능한 시간에 맞춰 예약하세요.
+        방문 전 문서와 진료 정보를 미리 확인할 수 있습니다.
+      </p>
+      <div class="hero-actions">
+        {% if g.current_user %}
+          <a class="button-link" href="{{ url_for('user_pages.appointments') }}">내 예약 확인</a>
+          <a class="secondary-button" href="{{ url_for('user_pages.documents') }}">문서 보기</a>
+        {% else %}
+          <a class="button-link" href="{{ url_for('auth.login_form') }}">진료 예약하기</a>
+          <a class="secondary-button" href="#departments">진료과 안내</a>
+        {% endif %}
+      </div>
+    </div>
+    <div class="hero-panel appointment-panel" aria-label="빠른 예약 안내">
+      <div class="hero-panel-header">
+        <span>빠른 예약</span>
+        <strong>오늘 접수 가능</strong>
+      </div>
+      <div class="appointment-summary">
+        <div>
+          <span>대표 진료시간</span>
+          <strong>09:00 - 18:00</strong>
+        </div>
+        <div>
+          <span>점심시간</span>
+          <strong>12:30 - 13:30</strong>
+        </div>
+      </div>
+      <div class="schedule-list hospital-list">
+        <div class="schedule-item">
+          <time>내과</time>
+          <div>
+            <strong>소화기내과</strong>
+            <span>복통, 소화불량, 건강검진 상담</span>
+          </div>
+        </div>
+        <div class="schedule-item">
+          <time>정형</time>
+          <div>
+            <strong>정형외과</strong>
+            <span>관절, 척추, 스포츠 손상 진료</span>
+          </div>
+        </div>
+        <div class="schedule-item">
+          <time>피부</time>
+          <div>
+            <strong>피부과</strong>
+            <span>아토피, 알레르기, 만성 피부질환</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="quick-links" aria-label="주요 서비스">
+    <a href="{{ url_for('auth.login_form') }}">
+      <strong>진료 예약</strong>
+      <span>가능한 시간 선택</span>
+    </a>
+    <a href="{{ url_for('auth.login_form') }}">
+      <strong>예약 조회</strong>
+      <span>내원 일정 확인</span>
+    </a>
+    <a href="{{ url_for('auth.login_form') }}">
+      <strong>의료 문서</strong>
+      <span>문진표와 안내문 확인</span>
+    </a>
+    <a href="#notice">
+      <strong>병원 소식</strong>
+      <span>공지와 운영 안내</span>
+    </a>
+  </section>
+
+  <section id="departments" class="home-section">
+    <div class="section-heading compact-heading">
+      <p class="eyebrow">Departments</p>
+      <h2>주요 진료과</h2>
+    </div>
+    <div class="feature-grid">
+      <article class="feature-item">
+        <span class="feature-number">내과</span>
+        <h3>소화기내과</h3>
+        <p>위장관 질환, 복통, 소화불량, 건강검진 후 상담을 진료합니다.</p>
+      </article>
+      <article class="feature-item">
+        <span class="feature-number">정형외과</span>
+        <h3>관절·척추 클리닉</h3>
+        <p>무릎, 어깨, 척추 통증과 스포츠 손상 회복을 돕습니다.</p>
+      </article>
+      <article class="feature-item">
+        <span class="feature-number">피부과</span>
+        <h3>알레르기 피부질환</h3>
+        <p>아토피, 두드러기, 만성 피부질환을 지속적으로 관리합니다.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="notice" class="home-section service-band">
+    <div>
+      <p class="eyebrow">Information</p>
+      <h2>이용 안내</h2>
+      <p>
+        예약 후 방문 전 문진표와 안내 문서를 확인하면 접수 시간을 줄일 수 있습니다.
+        증상 변화가 있으면 예약 메모에 남겨 주세요.
+      </p>
+    </div>
+    <div class="service-list">
+      <div><strong>초진 안내</strong><span>신분증과 기존 검사 결과지를 지참해 주세요.</span></div>
+      <div><strong>예약 변경</strong><span>내원 전 예약 화면에서 일정을 다시 확인해 주세요.</span></div>
+      <div><strong>문서 발급</strong><span>진료 관련 문서는 로그인 후 문서 메뉴에서 확인할 수 있습니다.</span></div>
+    </div>
   </section>
 {% endblock %}

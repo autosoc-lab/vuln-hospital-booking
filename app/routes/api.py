@@ -25,6 +25,7 @@ from app.models import (
     User,
     utc_now,
 )
+from app.pdf import render_text_pdf
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -345,9 +346,6 @@ def search_documents():
 @api_bp.post("/pdf/render")
 @login_required
 def render_pdf():
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
-
     payload = request.get_json(silent=True) or {}
     title = str(payload.get("title", "generated-document")).strip()[:120]
     body = str(payload.get("body", "")).strip()
@@ -362,23 +360,7 @@ def render_pdf():
     absolute_path = safe_join(storage_root(), relative_path)
     os.makedirs(absolute_dir, exist_ok=True)
 
-    pdf = canvas.Canvas(absolute_path, pagesize=A4)
-    _, height = A4
-    y = height - 72
-    pdf.setTitle(title)
-    pdf.setFont("Helvetica-Bold", 14)
-    pdf.drawString(72, y, title)
-    y -= 32
-    pdf.setFont("Helvetica", 10)
-    for raw_line in body.splitlines():
-        line = raw_line[:110]
-        if y < 72:
-            pdf.showPage()
-            pdf.setFont("Helvetica", 10)
-            y = height - 72
-        pdf.drawString(72, y, line)
-        y -= 16
-    pdf.save()
+    render_text_pdf(absolute_path, title, body)
 
     generated_pdf = GeneratedPdf(
         generated_by_user=g.current_user,

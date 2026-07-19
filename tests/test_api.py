@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app import create_app
 from app.db import db
 from app.models import Appointment, DoctorAvailabilitySlot, GeneratedPdf, MedicalDocument, User
+from app.pdf import KOREAN_FONT_NAME
 from app.seed import seed_database
 
 
@@ -187,6 +188,7 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(download_response.status_code, 200)
         self.assertEqual(download_response.mimetype, "application/pdf")
         self.assertTrue(download_response.data.startswith(b"%PDF"))
+        self.assertIn(KOREAN_FONT_NAME.encode(), download_response.data)
         download_response.close()
         with self.app.app_context():
             self.assertEqual(db.session.query(GeneratedPdf).count(), 3)

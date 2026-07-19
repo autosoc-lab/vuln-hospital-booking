@@ -36,6 +36,7 @@ from app.models import (
     User,
     utc_now,
 )
+from app.pdf import render_text_pdf
 
 user_pages_bp = Blueprint("user_pages", __name__)
 
@@ -396,9 +397,6 @@ def pdfs():
 @login_required
 def new_pdf():
     if request.method == "POST":
-        from reportlab.lib.pagesizes import A4
-        from reportlab.pdfgen import canvas
-
         title = request.form.get("title", "generated-document").strip()[:120]
         body = request.form.get("body", "").strip()
         if not body:
@@ -413,23 +411,7 @@ def new_pdf():
         absolute_path = safe_join(storage_root(), relative_path)
         os.makedirs(absolute_dir, exist_ok=True)
 
-        pdf = canvas.Canvas(absolute_path, pagesize=A4)
-        _, height = A4
-        y = height - 72
-        pdf.setTitle(title)
-        pdf.setFont("Helvetica-Bold", 14)
-        pdf.drawString(72, y, title)
-        y -= 32
-        pdf.setFont("Helvetica", 10)
-        for raw_line in body.splitlines():
-            line = raw_line[:110]
-            if y < 72:
-                pdf.showPage()
-                pdf.setFont("Helvetica", 10)
-                y = height - 72
-            pdf.drawString(72, y, line)
-            y -= 16
-        pdf.save()
+        render_text_pdf(absolute_path, title, body)
 
         generated_pdf = GeneratedPdf(
             generated_by_user=g.current_user,

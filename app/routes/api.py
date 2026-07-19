@@ -1,20 +1,28 @@
-from flask import Blueprint, abort, g, jsonify, request
+import os
+from uuid import uuid4
+
+from flask import Blueprint, abort, current_app, g, jsonify, request, send_file
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
+from werkzeug.utils import secure_filename, safe_join
 
 from app.auth import ensure_aware_utc, login_required
 from app.db import db
 from app.models import (
     APPOINTMENT_STATUS_SCHEDULED,
+    CLASSIFICATION_INTERNAL,
     Appointment,
     AppointmentStatusHistory,
     Doctor,
     DoctorAvailabilitySlot,
+    GeneratedPdf,
+    MedicalDocument,
     ROLE_ADMIN,
     ROLE_DOCTOR,
     ROLE_PATIENT,
     ROLE_STAFF,
+    User,
     utc_now,
 )
 
@@ -88,6 +96,49 @@ def serialize_appointment(appointment):
     }
 
 
+def serialize_document(document):
+    author = document.author_doctor
+    return {
+        "id": document.public_id,
+        "title": document.title,
+        "document_type": document.document_type,
+        "classification": document.classification,
+        "file_size": document.file_size,
+        "created_at": isoformat(document.created_at),
+        "updated_at": isoformat(document.updated_at),
+        "owner_patient": serialize_user(document.owner_patient),
+        "author_doctor": serialize_doctor(author) if author else None,
+    }
+
+
+def serialize_generated_pdf(generated_pdf):
+    return {
+        "id": generated_pdf.public_id,
+        "filename": generated_pdf.filename,
+        "created_at": isoformat(generated_pdf.created_at),
+        "updated_at": isoformat(generated_pdf.updated_at),
+    }
+
+
+def storage_root():
+    return os.path.abspath(current_app.config["DOCUMENT_STORAGE_ROOT"])
+
+
+def can_view_document(document):
+    if g.current_user.role in {ROLE_STAFF, ROLE_ADMIN}:
+        return True
+    if document.owner_patient_user_id == g.current_user.id:
+        return True
+    doctor_profile = g.current_user.doctor_profile
+    return bool(doctor_profile and document.author_doctor_id == doctor_profile.id)
+
+
+def can_download_pdf(generated_pdf):
+    if g.current_user.role in {ROLE_STAFF, ROLE_ADMIN}:
+        return True
+    return generated_pdf.generated_by_user_id == g.current_user.id
+
+
 def appointment_query():
     return (
         select(Appointment)
@@ -117,6 +168,45 @@ def scoped_appointment_query():
         return query
 
     abort(403)
+
+
+def scoped_document_query():
+    query = (
+        select(MedicalDocument)
+        .options(
+            joinedload(MedicalDocument.owner_patient),
+            joinedload(MedicalDocument.author_doctor).joinedload(Doctor.department),
+        )
+        .order_by(MedicalDocument.created_at.desc())
+    )
+
+    if g.current_user.role == ROLE_PATIENT:
+        return query.where(MedicalDocument.owner_patient_user_id == g.current_user.id)
+    if g.current_user.role == ROLE_DOCTOR:
+        doctor_profile = g.current_user.doctor_profile
+        if not doctor_profile:
+            return None
+        return query.where(MedicalDocument.author_doctor_id == doctor_profile.id)
+    if g.current_user.role in {ROLE_STAFF, ROLE_ADMIN}:
+        return query
+
+    abort(403)
+
+
+def owner_from_upload_payload():
+    if g.current_user.role == ROLE_PATIENT:
+        return g.current_user
+
+    patient_public_id = request.form.get("patient_public_id", "").strip()
+    if not patient_public_id:
+        return None
+
+    return db.session.scalar(
+        select(User).where(
+            User.public_id == patient_public_id,
+            User.role == ROLE_PATIENT,
+        )
+    )
 
 
 @api_bp.get("/profile")
@@ -226,3 +316,159 @@ def create_appointment():
         return jsonify({"error": "availability slot is not available"}), 409
 
     return jsonify({"appointment": serialize_appointment(appointment)}), 201
+
+
+@api_bp.get("/documents/search")
+@login_required
+def search_documents():
+    query = scoped_document_query()
+    if query is None:
+        return jsonify({"documents": []})
+
+    search_term = request.args.get("q", "").strip()
+    document_type = request.args.get("document_type", "").strip()
+    if search_term:
+        pattern = f"%{search_term}%"
+        query = query.where(
+            or_(
+                MedicalDocument.title.ilike(pattern),
+                MedicalDocument.document_type.ilike(pattern),
+            )
+        )
+    if document_type:
+        query = query.where(MedicalDocument.document_type == document_type)
+
+    documents = db.session.scalars(query).unique().all()
+    return jsonify({"documents": [serialize_document(document) for document in documents]})
+
+
+@api_bp.post("/pdf/render")
+@login_required
+def render_pdf():
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    payload = request.get_json(silent=True) or {}
+    title = str(payload.get("title", "generated-document")).strip()[:120]
+    body = str(payload.get("body", "")).strip()
+    if not body:
+        return jsonify({"error": "body is required"}), 400
+
+    filename_base = secure_filename(title) or "generated-document"
+    filename = f"{filename_base[:80]}-{uuid4().hex}.pdf"
+    relative_dir = safe_join("generated_pdfs", g.current_user.public_id)
+    relative_path = safe_join(relative_dir, filename)
+    absolute_dir = safe_join(storage_root(), relative_dir)
+    absolute_path = safe_join(storage_root(), relative_path)
+    os.makedirs(absolute_dir, exist_ok=True)
+
+    pdf = canvas.Canvas(absolute_path, pagesize=A4)
+    _, height = A4
+    y = height - 72
+    pdf.setTitle(title)
+    pdf.setFont("Helvetica-Bold", 14)
+    pdf.drawString(72, y, title)
+    y -= 32
+    pdf.setFont("Helvetica", 10)
+    for raw_line in body.splitlines():
+        line = raw_line[:110]
+        if y < 72:
+            pdf.showPage()
+            pdf.setFont("Helvetica", 10)
+            y = height - 72
+        pdf.drawString(72, y, line)
+        y -= 16
+    pdf.save()
+
+    generated_pdf = GeneratedPdf(
+        generated_by_user=g.current_user,
+        filename=filename,
+        storage_path=relative_path,
+    )
+    db.session.add(generated_pdf)
+    db.session.commit()
+
+    return jsonify({"pdf": serialize_generated_pdf(generated_pdf)}), 201
+
+
+@api_bp.get("/pdf/download/<public_id>")
+@login_required
+def download_pdf(public_id):
+    generated_pdf = db.session.scalar(
+        select(GeneratedPdf).where(GeneratedPdf.public_id == public_id)
+    )
+    if not generated_pdf:
+        abort(404)
+    if not can_download_pdf(generated_pdf):
+        abort(403)
+
+    file_path = safe_join(storage_root(), generated_pdf.storage_path)
+    if not file_path or not os.path.isfile(file_path):
+        abort(404)
+
+    return send_file(file_path, as_attachment=True, download_name=generated_pdf.filename)
+
+
+@api_bp.post("/storage/upload")
+@login_required
+def upload_document():
+    uploaded_file = request.files.get("file")
+    if not uploaded_file or not uploaded_file.filename:
+        return jsonify({"error": "file is required"}), 400
+
+    owner = owner_from_upload_payload()
+    if not owner:
+        return jsonify({"error": "patient_public_id is required for this role"}), 400
+
+    original_filename = secure_filename(uploaded_file.filename)
+    if not original_filename:
+        return jsonify({"error": "filename is invalid"}), 400
+
+    stored_filename = f"{uuid4().hex}-{original_filename}"
+    relative_dir = safe_join("uploads", owner.public_id)
+    relative_path = safe_join(relative_dir, stored_filename)
+    absolute_dir = safe_join(storage_root(), relative_dir)
+    absolute_path = safe_join(storage_root(), relative_path)
+    os.makedirs(absolute_dir, exist_ok=True)
+    uploaded_file.save(absolute_path)
+
+    document = MedicalDocument(
+        owner_patient=owner,
+        author_doctor=g.current_user.doctor_profile if g.current_user.role == ROLE_DOCTOR else None,
+        title=request.form.get("title", "").strip() or original_filename,
+        document_type=request.form.get("document_type", "").strip() or "테스트 문서",
+        classification=request.form.get("classification", "").strip() or CLASSIFICATION_INTERNAL,
+        file_path=relative_path,
+        file_size=os.path.getsize(absolute_path),
+    )
+    db.session.add(document)
+    db.session.commit()
+
+    return jsonify({"document": serialize_document(document)}), 201
+
+
+@api_bp.get("/storage/download/<public_id>")
+@login_required
+def download_document(public_id):
+    document = db.session.scalar(
+        select(MedicalDocument)
+        .options(
+            joinedload(MedicalDocument.owner_patient),
+            joinedload(MedicalDocument.author_doctor).joinedload(Doctor.department),
+        )
+        .where(MedicalDocument.public_id == public_id)
+    )
+    if not document:
+        abort(404)
+    if not can_view_document(document):
+        abort(403)
+
+    file_path = safe_join(storage_root(), document.file_path)
+    if not file_path or not os.path.isfile(file_path):
+        abort(404)
+
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=os.path.basename(document.file_path),
+    )

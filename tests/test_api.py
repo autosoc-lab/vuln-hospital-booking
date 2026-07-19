@@ -1,3 +1,5 @@
+import io
+import shutil
 import tempfile
 import unittest
 
@@ -5,7 +7,7 @@ from sqlalchemy import select
 
 from app import create_app
 from app.db import db
-from app.models import Appointment, DoctorAvailabilitySlot
+from app.models import Appointment, DoctorAvailabilitySlot, GeneratedPdf, MedicalDocument, User
 from app.seed import seed_database
 
 
@@ -15,11 +17,14 @@ class TestConfig:
     APP_NAME = "Test Hospital"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    DOCUMENT_STORAGE_ROOT = tempfile.mkdtemp()
+    DOCUMENT_STORAGE_ROOT = ""
+    STORAGE_HEALTHCHECK_PATH = ".healthcheck"
 
 
 class ApiTestCase(unittest.TestCase):
     def setUp(self):
+        self.storage_dir = tempfile.mkdtemp()
+        TestConfig.DOCUMENT_STORAGE_ROOT = self.storage_dir
         self.app = create_app(TestConfig)
         self.client = self.app.test_client()
         with self.app.app_context():
@@ -31,6 +36,7 @@ class ApiTestCase(unittest.TestCase):
             db.session.remove()
             db.drop_all()
             db.engine.dispose()
+        shutil.rmtree(self.storage_dir, ignore_errors=True)
 
     def login(self, username, password):
         return self.client.post(
@@ -128,6 +134,104 @@ class ApiTestCase(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+    def test_documents_search_is_scoped_to_patient(self):
+        self.login("alice", "PatientPass123!")
+
+        response = self.client.get("/api/documents/search")
+
+        self.assertEqual(response.status_code, 200)
+        documents = response.get_json()["documents"]
+        self.assertEqual(len(documents), 2)
+        self.assertEqual({item["owner_patient"]["username"] for item in documents}, {"alice"})
+
+    def test_documents_search_filters_by_title(self):
+        self.login("staff", "StaffPass123!")
+
+        response = self.client.get("/api/documents/search?q=정형외과")
+
+        self.assertEqual(response.status_code, 200)
+        documents = response.get_json()["documents"]
+        self.assertEqual(len(documents), 1)
+        self.assertEqual(documents[0]["owner_patient"]["username"], "bob")
+
+    def test_pdf_render_and_download(self):
+        self.login("alice", "PatientPass123!")
+
+        render_response = self.client.post(
+            "/api/pdf/render",
+            json={"title": "진료 메모", "body": "복통 상담 내용\n검사 예약 안내"},
+        )
+
+        self.assertEqual(render_response.status_code, 201)
+        pdf_id = render_response.get_json()["pdf"]["id"]
+        download_response = self.client.get(f"/api/pdf/download/{pdf_id}")
+        self.assertEqual(download_response.status_code, 200)
+        self.assertEqual(download_response.mimetype, "application/pdf")
+        self.assertTrue(download_response.data.startswith(b"%PDF"))
+        download_response.close()
+        with self.app.app_context():
+            self.assertEqual(db.session.query(GeneratedPdf).count(), 3)
+
+    def test_storage_upload_and_download(self):
+        self.login("alice", "PatientPass123!")
+
+        upload_response = self.client.post(
+            "/api/storage/upload",
+            data={
+                "file": (io.BytesIO(b"sample document"), "sample.txt"),
+                "title": "샘플 업로드",
+                "document_type": "테스트 문서",
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(upload_response.status_code, 201)
+        document_id = upload_response.get_json()["document"]["id"]
+        download_response = self.client.get(f"/api/storage/download/{document_id}")
+        self.assertEqual(download_response.status_code, 200)
+        self.assertEqual(download_response.data, b"sample document")
+        download_response.close()
+        with self.app.app_context():
+            self.assertEqual(db.session.query(MedicalDocument).count(), 4)
+
+    def test_staff_upload_requires_patient_public_id(self):
+        self.login("staff", "StaffPass123!")
+
+        response = self.client.post(
+            "/api/storage/upload",
+            data={"file": (io.BytesIO(b"sample document"), "sample.txt")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_staff_can_upload_for_patient(self):
+        self.login("staff", "StaffPass123!")
+        with self.app.app_context():
+            patient = db.session.scalar(select(User).where(User.username == "alice"))
+            patient_public_id = patient.public_id
+
+        response = self.client.post(
+            "/api/storage/upload",
+            data={
+                "file": (io.BytesIO(b"staff upload"), "staff.txt"),
+                "patient_public_id": patient_public_id,
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["document"]["owner_patient"]["username"], "alice")
+
+    def test_health_ready_checks_database_and_storage(self):
+        response = self.client.get("/health/ready")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json()["checks"],
+            {"database": "ok", "storage": "ok"},
+        )
 
 
 if __name__ == "__main__":

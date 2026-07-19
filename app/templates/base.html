@@ -19,7 +19,7 @@
             {% if g.current_user.role == "ADMIN" %}
               <a href="{{ url_for('admin_api.dashboard') }}">관리자</a>
             {% endif %}
-            <a href="{{ url_for('user_pages.profile') }}">{{ g.current_user.full_name }}</a>
+            <a href="{{ url_for('user_pages.profile') }}">마이페이지</a>
             <form class="nav-form" method="post" action="{{ url_for('auth.logout') }}">
               <button type="submit">로그아웃</button>
             </form>

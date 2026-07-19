@@ -200,16 +200,58 @@ p {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
+.summary-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-bottom: 24px;
+}
+
 .card,
 .detail-panel,
-.table-wrap {
+.table-wrap,
+.metric-card,
+.admin-action {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #ffffff;
 }
 
-.card {
+.card,
+.metric-card,
+.admin-action {
   padding: 20px;
+}
+
+.metric-card span,
+.admin-action span,
+.table-muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.admin-actions {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.admin-action {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.admin-action strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 16px;
 }
 
 .card-header {

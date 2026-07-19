@@ -1,7 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, render_template, request
 
 from app.auth import admin_required, ensure_aware_utc
 from app.db import db
@@ -21,6 +21,14 @@ from app.models import (
 from app.routes.api import isoformat, serialize_appointment, serialize_document
 
 admin_api_bp = Blueprint("admin_api", __name__)
+
+
+def wants_html():
+    return (
+        request.accept_mimetypes.accept_html
+        and request.accept_mimetypes["text/html"]
+        >= request.accept_mimetypes["application/json"]
+    )
 
 
 def model_count(model):
@@ -94,22 +102,19 @@ def dashboard():
             .order_by(User.role.asc())
         ).all()
     )
-    return jsonify(
-        {
-            "dashboard": {
-                "counts": {
-                    "users": model_count(User),
-                    "patients": users_by_role.get(ROLE_PATIENT, 0),
-                    "doctors": users_by_role.get(ROLE_DOCTOR, 0),
-                    "staff": users_by_role.get(ROLE_STAFF, 0),
-                    "admins": users_by_role.get(ROLE_ADMIN, 0),
-                    "appointments": model_count(Appointment),
-                    "documents": model_count(MedicalDocument),
-                    "active_sessions": active_session_count(),
-                }
-            }
-        }
-    )
+    counts = {
+        "users": model_count(User),
+        "patients": users_by_role.get(ROLE_PATIENT, 0),
+        "doctors": users_by_role.get(ROLE_DOCTOR, 0),
+        "staff": users_by_role.get(ROLE_STAFF, 0),
+        "admins": users_by_role.get(ROLE_ADMIN, 0),
+        "appointments": model_count(Appointment),
+        "documents": model_count(MedicalDocument),
+        "active_sessions": active_session_count(),
+    }
+    if wants_html():
+        return render_template("admin/dashboard.html", counts=counts)
+    return jsonify({"dashboard": {"counts": counts}})
 
 
 @admin_api_bp.get("/admin/appointments")
@@ -126,6 +131,8 @@ def appointments():
         .order_by(Appointment.created_at.desc())
     )
     appointments = db.session.scalars(query).unique().all()
+    if wants_html():
+        return render_template("admin/appointments.html", appointments=appointments)
     return jsonify({"appointments": [serialize_appointment(item) for item in appointments]})
 
 
@@ -141,6 +148,8 @@ def documents():
         .order_by(MedicalDocument.created_at.desc())
     )
     documents = db.session.scalars(query).unique().all()
+    if wants_html():
+        return render_template("admin/documents.html", documents=documents)
     return jsonify({"documents": [serialize_document(document) for document in documents]})
 
 
@@ -153,4 +162,7 @@ def security_events():
         .order_by(UserSession.created_at.desc())
     )
     user_sessions = db.session.scalars(query).unique().all()
-    return jsonify({"security_events": session_security_events(user_sessions)})
+    events = session_security_events(user_sessions)
+    if wants_html():
+        return render_template("admin/security_events.html", events=events)
+    return jsonify({"security_events": events})

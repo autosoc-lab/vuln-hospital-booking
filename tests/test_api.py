@@ -217,6 +217,42 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(events[0]["user"]["role"], "ADMIN")
         self.assertIsNotNone(events[0]["source_ip"])
 
+    def test_admin_dashboard_renders_html_for_browser_requests(self):
+        self.login("admin", "AdminPass123!")
+
+        response = self.client.get("/admin", headers={"Accept": "text/html"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("관리자 대시보드".encode(), response.data)
+        self.assertIn("전체 예약".encode(), response.data)
+
+    def test_admin_appointments_render_html_for_browser_requests(self):
+        self.login("admin", "AdminPass123!")
+
+        response = self.client.get("/admin/appointments", headers={"Accept": "text/html"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("전체 예약".encode(), response.data)
+        self.assertIn("김민지".encode(), response.data)
+
+    def test_admin_documents_render_html_for_browser_requests(self):
+        self.login("admin", "AdminPass123!")
+
+        response = self.client.get("/admin/documents", headers={"Accept": "text/html"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("전체 문서".encode(), response.data)
+        self.assertIn("소화기내과 진료의뢰서".encode(), response.data)
+
+    def test_admin_security_events_render_html_for_browser_requests(self):
+        self.login("admin", "AdminPass123!")
+
+        response = self.client.get("/admin/security-events", headers={"Accept": "text/html"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("보안 이벤트".encode(), response.data)
+        self.assertIn("SESSION_CREATED".encode(), response.data)
+
     def test_patient_can_create_appointment(self):
         self.login("alice", "PatientPass123!")
         with self.app.app_context():

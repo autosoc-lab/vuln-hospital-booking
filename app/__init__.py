@@ -5,6 +5,7 @@ from app.cli import register_cli_commands
 from app.config import Config
 from app.db import db
 from app.request_logging import register_request_event_logging
+from app.routes.admin_api import admin_api_bp
 from app.routes.auth import auth_bp
 from app.routes import main_bp
 from app.routes.api import api_bp
@@ -19,6 +20,7 @@ def create_app(config_class=Config):
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(admin_api_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(user_pages_bp)
     register_cli_commands(app)

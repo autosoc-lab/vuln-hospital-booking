@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="section-heading split-heading">
+    <div>
+      <p class="eyebrow">Admin</p>
+      <h1>전체 예약</h1>
+      <p>모든 환자와 의료진의 예약 정보를 확인합니다.</p>
+    </div>
+    <a class="secondary-link" href="{{ url_for('admin_api.dashboard') }}">대시보드</a>
+  </section>
+
+  <section class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>일시</th>
+          <th>환자</th>
+          <th>의료진</th>
+          <th>진료과</th>
+          <th>상태</th>
+          <th>예약 사유</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for appointment in appointments %}
+          <tr>
+            <td>{{ appointment.availability_slot.starts_at.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td>{{ appointment.user.full_name }}<br><span class="table-muted">{{ appointment.user.username }}</span></td>
+            <td>{{ appointment.availability_slot.doctor.name }}</td>
+            <td>{{ appointment.availability_slot.doctor.department.name }}</td>
+            <td><span class="badge">{{ appointment.status }}</span></td>
+            <td>{{ appointment.reason }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="empty-cell">예약 내역이 없습니다.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

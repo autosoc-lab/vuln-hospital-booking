@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="section-heading split-heading">
+    <div>
+      <p class="eyebrow">Admin</p>
+      <h1>관리자 대시보드</h1>
+      <p>사용자, 예약, 문서, 세션 상태를 한 곳에서 확인합니다.</p>
+    </div>
+  </section>
+
+  <section class="summary-grid">
+    <article class="metric-card">
+      <span>전체 사용자</span>
+      <strong>{{ counts.users }}</strong>
+    </article>
+    <article class="metric-card">
+      <span>환자</span>
+      <strong>{{ counts.patients }}</strong>
+    </article>
+    <article class="metric-card">
+      <span>의료진</span>
+      <strong>{{ counts.doctors }}</strong>
+    </article>
+    <article class="metric-card">
+      <span>직원</span>
+      <strong>{{ counts.staff }}</strong>
+    </article>
+    <article class="metric-card">
+      <span>관리자</span>
+      <strong>{{ counts.admins }}</strong>
+    </article>
+    <article class="metric-card">
+      <span>예약</span>
+      <strong>{{ counts.appointments }}</strong>
+    </article>
+    <article class="metric-card">
+      <span>문서</span>
+      <strong>{{ counts.documents }}</strong>
+    </article>
+    <article class="metric-card">
+      <span>활성 세션</span>
+      <strong>{{ counts.active_sessions }}</strong>
+    </article>
+  </section>
+
+  <section class="admin-actions">
+    <a class="admin-action" href="{{ url_for('admin_api.appointments') }}">
+      <span>전체 예약</span>
+      <strong>예약 현황 보기</strong>
+    </a>
+    <a class="admin-action" href="{{ url_for('admin_api.documents') }}">
+      <span>전체 문서</span>
+      <strong>문서 목록 보기</strong>
+    </a>
+    <a class="admin-action" href="{{ url_for('admin_api.security_events') }}">
+      <span>보안 이벤트</span>
+      <strong>세션 이벤트 보기</strong>
+    </a>
+  </section>
+{% endblock %}

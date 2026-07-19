@@ -61,6 +61,18 @@ flask --app run seed-db
 | 의사 | `dr.lee` | `DoctorPass123!` |
 | 의사 | `dr.park` | `DoctorPass123!` |
 
+## 관리자 API
+
+다음 관리자 기능은 관리자 계정으로 로그인한 세션에서만 사용할 수 있습니다.
+브라우저에서는 관리자 화면으로 표시되고, JSON 요청에서는 API 응답을 반환합니다.
+
+| 엔드포인트 | 메서드 | 설명 |
+| --- | --- | --- |
+| `/admin` | `GET` | 관리자 대시보드 요약 |
+| `/admin/appointments` | `GET` | 전체 예약 조회 |
+| `/admin/documents` | `GET` | 전체 문서 조회 |
+| `/admin/security-events` | `GET` | 애플리케이션 보안 이벤트 확인 |
+
 ## 인증 기능 확인
 
 Docker 환경에서 서버와 DB를 실행한 뒤 DB를 초기화합니다.

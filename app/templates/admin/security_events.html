@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="section-heading split-heading">
+    <div>
+      <p class="eyebrow">Admin</p>
+      <h1>보안 이벤트</h1>
+      <p>로그인 세션 생성, 만료, 해지 이벤트를 확인합니다.</p>
+    </div>
+    <a class="secondary-link" href="{{ url_for('admin_api.dashboard') }}">대시보드</a>
+  </section>
+
+  <section class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>발생 시각</th>
+          <th>이벤트</th>
+          <th>사용자</th>
+          <th>역할</th>
+          <th>IP</th>
+          <th>User-Agent 해시</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in events %}
+          <tr>
+            <td>{{ event.occurred_at }}</td>
+            <td><span class="badge">{{ event.event_type }}</span></td>
+            <td>{{ event.user.username }}</td>
+            <td>{{ event.user.role }}</td>
+            <td>{{ event.source_ip or "-" }}</td>
+            <td><span class="table-muted">{{ event.user_agent_hash or "-" }}</span></td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="empty-cell">보안 이벤트가 없습니다.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

@@ -81,6 +81,232 @@ body {
   max-width: 680px;
 }
 
+.home-hero {
+  display: grid;
+  align-items: center;
+  gap: 40px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  min-height: 500px;
+}
+
+.home-hero-copy {
+  max-width: 640px;
+}
+
+.home-hero h1 {
+  max-width: 620px;
+  font-size: 52px;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 8px 12px;
+  text-decoration: none;
+}
+
+.hero-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 20px 45px rgba(32, 36, 42, 0.08);
+  padding: 22px;
+}
+
+.appointment-panel {
+  border-top: 5px solid var(--accent);
+}
+
+.hero-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.hero-panel-header span,
+.schedule-item span,
+.service-list span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.hero-panel-header strong {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.appointment-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.appointment-summary div {
+  border-radius: 8px;
+  background: #f7f8fa;
+  padding: 14px;
+}
+
+.appointment-summary span {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.appointment-summary strong {
+  font-size: 15px;
+}
+
+.schedule-list {
+  display: grid;
+  gap: 10px;
+}
+
+.schedule-item {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 58px 1fr;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.schedule-item time {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hospital-list .schedule-item time {
+  align-items: center;
+  background: #ecfdf5;
+  border-radius: 6px;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+}
+
+.schedule-item strong,
+.service-list strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 15px;
+}
+
+.home-section {
+  margin-top: 56px;
+}
+
+.quick-links {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 20px;
+}
+
+.quick-links a {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 18px;
+  text-decoration: none;
+}
+
+.quick-links strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 16px;
+}
+
+.quick-links span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.compact-heading {
+  margin-bottom: 20px;
+}
+
+.compact-heading h2,
+.service-band h2 {
+  margin: 0 0 12px;
+  font-size: 28px;
+  line-height: 1.25;
+}
+
+.feature-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.feature-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 20px;
+}
+
+.feature-number {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.feature-item h3 {
+  margin: 12px 0 8px;
+  font-size: 18px;
+}
+
+.feature-item p {
+  margin: 0;
+  font-size: 15px;
+}
+
+.service-band {
+  display: grid;
+  align-items: start;
+  gap: 28px;
+  grid-template-columns: minmax(0, 0.85fr) minmax(320px, 1fr);
+  border-top: 1px solid var(--line);
+  padding-top: 40px;
+}
+
+.service-band p {
+  margin-bottom: 0;
+}
+
+.service-list {
+  display: grid;
+  gap: 10px;
+}
+
+.service-list div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px;
+}
+
 .auth-panel {
   max-width: 420px;
   margin: 0 auto;
@@ -504,6 +730,25 @@ dd {
   .card-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .home-hero,
+  .feature-grid,
+  .quick-links,
+  .service-band {
+    grid-template-columns: 1fr;
+  }
+
+  .home-hero {
+    min-height: auto;
+  }
+
+  .home-hero h1 {
+    font-size: 36px;
+  }
+
+  .appointment-summary {
+    grid-template-columns: 1fr;
   }
 
   .detail-grid,

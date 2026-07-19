@@ -98,6 +98,14 @@ class ApiTestCase(unittest.TestCase):
 
         self.assertIn(response.status_code, {200, 304})
 
+    def test_index_page_renders_service_home(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("예약부터 진료까지 더 쉽고 편리하게".encode(), response.data)
+        self.assertIn("빠른 예약".encode(), response.data)
+        self.assertIn("주요 진료과".encode(), response.data)
+
     def test_profile_page_is_available_to_logged_in_users(self):
         self.login("alice", "PatientPass123!")
 

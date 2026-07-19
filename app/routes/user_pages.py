@@ -1,6 +1,20 @@
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
+import os
+
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    g,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    url_for,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
+from werkzeug.utils import safe_join
 
 from app.auth import login_required
 from app.db import db
@@ -56,6 +70,25 @@ def appointment_query():
         )
         .order_by(Appointment.created_at.desc())
     )
+
+
+def document_query():
+    return (
+        select(MedicalDocument)
+        .options(
+            joinedload(MedicalDocument.owner_patient),
+            joinedload(MedicalDocument.author_doctor).joinedload(Doctor.department),
+        )
+    )
+
+
+def get_document_or_404(public_id):
+    document = db.session.scalar(document_query().where(MedicalDocument.public_id == public_id))
+    if not document:
+        abort(404)
+    if not can_view_document(document):
+        abort(403)
+    return document
 
 
 @user_pages_bp.get("/doctors")
@@ -178,14 +211,7 @@ def appointment_detail(public_id):
 @user_pages_bp.get("/documents")
 @login_required
 def documents():
-    query = (
-        select(MedicalDocument)
-        .options(
-            joinedload(MedicalDocument.owner_patient),
-            joinedload(MedicalDocument.author_doctor).joinedload(Doctor.department),
-        )
-        .order_by(MedicalDocument.created_at.desc())
-    )
+    query = document_query().order_by(MedicalDocument.created_at.desc())
 
     if g.current_user.role == ROLE_PATIENT:
         query = query.where(MedicalDocument.owner_patient_user_id == g.current_user.id)
@@ -203,17 +229,21 @@ def documents():
 @user_pages_bp.get("/documents/<public_id>")
 @login_required
 def document_detail(public_id):
-    document = db.session.scalar(
-        select(MedicalDocument)
-        .options(
-            joinedload(MedicalDocument.owner_patient),
-            joinedload(MedicalDocument.author_doctor).joinedload(Doctor.department),
-        )
-        .where(MedicalDocument.public_id == public_id)
-    )
-    if not document:
-        abort(404)
-    if not can_view_document(document):
-        abort(403)
-
+    document = get_document_or_404(public_id)
     return render_template("document_detail.html", document=document)
+
+
+@user_pages_bp.get("/documents/<public_id>/download")
+@login_required
+def download_document(public_id):
+    document = get_document_or_404(public_id)
+    storage_root = os.path.abspath(current_app.config["DOCUMENT_STORAGE_ROOT"])
+    file_path = safe_join(storage_root, document.file_path)
+    if not file_path or not os.path.isfile(file_path):
+        abort(404)
+
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=os.path.basename(document.file_path),
+    )

@@ -16,6 +16,7 @@
           <th>작성 의료진</th>
           <th>분류</th>
           <th>상세</th>
+          <th>다운로드</th>
         </tr>
       </thead>
       <tbody>
@@ -26,10 +27,11 @@
             <td>{{ document.author_doctor.name if document.author_doctor else "-" }}</td>
             <td><span class="badge">{{ document.classification }}</span></td>
             <td><a href="{{ url_for('user_pages.document_detail', public_id=document.public_id) }}">보기</a></td>
+            <td><a href="{{ url_for('user_pages.download_document', public_id=document.public_id) }}">받기</a></td>
           </tr>
         {% else %}
           <tr>
-            <td colspan="5" class="empty-cell">조회 가능한 문서가 없습니다.</td>
+            <td colspan="6" class="empty-cell">조회 가능한 문서가 없습니다.</td>
           </tr>
         {% endfor %}
       </tbody>

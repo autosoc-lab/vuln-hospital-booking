@@ -11,6 +11,7 @@
       <nav class="nav">
         <a class="brand" href="{{ url_for('main.index') }}">{{ app_name }}</a>
         <div class="nav-links">
+          <a href="{{ url_for('main.clinic_guides') }}">진료 안내문</a>
           {% if g.current_user %}
             <a href="{{ url_for('user_pages.doctors') }}">의료진</a>
             <a href="{{ url_for('user_pages.appointments') }}">예약</a>

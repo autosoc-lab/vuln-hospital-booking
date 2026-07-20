@@ -66,6 +66,28 @@ class UserSession(db.Model):
     user = db.relationship("User", back_populates="sessions")
 
 
+class SecurityEvent(db.Model):
+    __tablename__ = "security_events"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_type = db.Column(db.String(80), nullable=False, index=True)
+    severity = db.Column(db.String(20), nullable=False, default="INFO", index=True)
+    source_ip = db.Column(db.String(64), nullable=True, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    user_session_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user_sessions.id"),
+        nullable=True,
+        index=True,
+    )
+    path = db.Column(db.String(255), nullable=True)
+    detail_json = db.Column(db.Text, nullable=False, default="{}")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+
+    user = db.relationship("User")
+    user_session = db.relationship("UserSession")
+
+
 class Department(db.Model):
     __tablename__ = "departments"
 

@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
@@ -14,6 +16,7 @@ from app.models import (
     ROLE_DOCTOR,
     ROLE_PATIENT,
     ROLE_STAFF,
+    SecurityEvent,
     User,
     UserSession,
     utc_now,
@@ -57,6 +60,27 @@ def serialize_security_event(event_type, occurred_at, user_session):
             "username": user.username,
             "role": user.role,
         },
+    }
+
+
+def serialize_stored_security_event(event):
+    user = event.user
+    details = json.loads(event.detail_json or "{}")
+    return {
+        "event_type": event.event_type,
+        "severity": event.severity,
+        "occurred_at": isoformat(event.created_at),
+        "source_ip": event.source_ip,
+        "user_agent_hash": None,
+        "path": event.path,
+        "details": details,
+        "user": {
+            "id": user.public_id,
+            "username": user.username,
+            "role": user.role,
+        }
+        if user
+        else None,
     }
 
 
@@ -155,13 +179,22 @@ def documents():
 @admin_api_bp.get("/admin/security-events")
 @admin_required
 def security_events():
-    query = (
+    session_query = (
         select(UserSession)
         .options(joinedload(UserSession.user))
         .order_by(UserSession.created_at.desc())
     )
-    user_sessions = db.session.scalars(query).unique().all()
-    events = session_security_events(user_sessions)
+    user_sessions = db.session.scalars(session_query).unique().all()
+    stored_query = (
+        select(SecurityEvent)
+        .options(joinedload(SecurityEvent.user))
+        .order_by(SecurityEvent.created_at.desc())
+    )
+    stored_events = db.session.scalars(stored_query).unique().all()
+    events = session_security_events(user_sessions) + [
+        serialize_stored_security_event(event) for event in stored_events
+    ]
+    events = sorted(events, key=lambda event: event["occurred_at"], reverse=True)
     if wants_html():
         return render_template("admin/security_events.html", events=events)
     return jsonify({"security_events": events})

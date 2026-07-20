@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -8,7 +9,15 @@ from sqlalchemy import select
 
 from app import create_app
 from app.db import db
-from app.models import Appointment, DoctorAvailabilitySlot, GeneratedPdf, MedicalDocument, User
+from app.models import (
+    Appointment,
+    DoctorAvailabilitySlot,
+    GeneratedPdf,
+    MedicalDocument,
+    SecurityEvent,
+    User,
+    UserSession,
+)
 from app.pdf import KOREAN_FONT_NAME
 from app.seed import seed_database
 
@@ -21,6 +30,8 @@ class TestConfig:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     DOCUMENT_STORAGE_ROOT = ""
     STORAGE_HEALTHCHECK_PATH = ".healthcheck"
+    BULK_DOWNLOAD_WINDOW_SECONDS = 60
+    BULK_DOWNLOAD_THRESHOLD = 3
 
 
 class ApiTestCase(unittest.TestCase):
@@ -105,6 +116,58 @@ class ApiTestCase(unittest.TestCase):
         self.assertIn("예약부터 진료까지 더 쉽고 편리하게".encode(), response.data)
         self.assertIn("빠른 예약".encode(), response.data)
         self.assertIn("주요 진료과".encode(), response.data)
+        self.assertIn("공개 진료 안내문".encode(), response.data)
+
+    def test_clinic_guides_page_supports_public_search(self):
+        response = self.client.get("/clinic-guides?q=정형외과")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("진료 안내문".encode(), response.data)
+        self.assertIn("정형외과 안내문".encode(), response.data)
+        self.assertIn("/clinic-guides/".encode(), response.data)
+        self.assertNotIn("소화기내과 진료의뢰서".encode(), response.data)
+
+    def test_public_clinic_guide_document_can_be_viewed(self):
+        with self.app.app_context():
+            document = db.session.scalar(
+                select(MedicalDocument).where(MedicalDocument.title == "정형외과 안내문")
+            )
+            document_id = document.public_id
+            absolute_path = os.path.join(self.storage_dir, document.file_path)
+            os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
+            with open(absolute_path, "wb") as handle:
+                handle.write(b"%PDF public guide")
+
+        response = self.client.get(f"/clinic-guides/{document_id}/document")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertEqual(response.data, b"%PDF public guide")
+        response.close()
+
+    def test_sensitive_document_cannot_be_viewed_as_public_clinic_guide(self):
+        with self.app.app_context():
+            document = db.session.scalar(
+                select(MedicalDocument).where(MedicalDocument.title == "소화기내과 진료의뢰서")
+            )
+            document_id = document.public_id
+
+        response = self.client.get(f"/clinic-guides/{document_id}/document")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_clinic_guides_page_search_is_intentionally_vulnerable(self):
+        response = self.client.get("/clinic-guides?q=%25%27)%20OR%201=1%20--%20")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("정형외과 안내문".encode(), response.data)
+        self.assertIn("소화기내과 진료의뢰서".encode(), response.data)
+
+    def test_clinic_guides_page_shows_message_for_sql_errors(self):
+        response = self.client.get("/clinic-guides?q=%25%27)%20UNION%20SELECT%20%27only-one%27%20--%20")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("검색어를 처리할 수 없습니다".encode(), response.data)
 
     def test_profile_page_is_available_to_logged_in_users(self):
         self.login("alice", "PatientPass123!")
@@ -124,9 +187,25 @@ class ApiTestCase(unittest.TestCase):
         self.assertIn("김도현".encode(), response.data)
         self.assertNotIn("이서연".encode(), response.data)
 
-    def test_doctors_search_filters_by_name_or_specialty(self):
+    def test_doctors_page_search_is_intentionally_vulnerable(self):
         self.login("alice", "PatientPass123!")
 
+        response = self.client.get("/doctors?q=%25%27)%20OR%201=1%20--%20")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("김도현".encode(), response.data)
+        self.assertIn("이서연".encode(), response.data)
+        self.assertIn("박지훈".encode(), response.data)
+
+    def test_doctors_page_shows_message_for_sql_errors(self):
+        self.login("alice", "PatientPass123!")
+
+        response = self.client.get("/doctors?q=%25%27)%20UNION%20SELECT%201,2%20--%20")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("검색어를 처리할 수 없습니다".encode(), response.data)
+
+    def test_doctors_search_filters_by_name_or_specialty(self):
         response = self.client.get("/api/doctors/search?q=소화기")
 
         self.assertEqual(response.status_code, 200)
@@ -134,6 +213,74 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(len(doctors), 1)
         self.assertEqual(doctors[0]["name"], "김도현")
         self.assertEqual(doctors[0]["department"]["name"], "내과")
+
+    def test_doctors_search_is_public_without_login(self):
+        response = self.client.get("/api/doctors/search")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.get_json()["doctors"]), 3)
+
+    def test_doctors_search_is_intentionally_vulnerable(self):
+        response = self.client.get("/api/doctors/search?q=%25%27)%20OR%201=1%20--")
+
+        self.assertEqual(response.status_code, 200)
+        doctors = response.get_json()["doctors"]
+        self.assertEqual(len(doctors), 3)
+
+    def test_vulnerable_doctors_search_records_security_event(self):
+        response = self.client.get("/api/doctors/search?q=정형외과")
+
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            event = db.session.scalar(
+                select(SecurityEvent).where(
+                    SecurityEvent.event_type == "SQLI_DOCTOR_SEARCH_USED"
+                )
+            )
+            self.assertIsNotNone(event)
+
+    def test_public_clinic_guides_search_lists_only_public_documents(self):
+        response = self.client.get("/api/public/clinic-guides/search?q=정형외과")
+
+        self.assertEqual(response.status_code, 200)
+        guides = response.get_json()["clinic_guides"]
+        self.assertEqual(len(guides), 1)
+        self.assertEqual(guides[0]["title"], "정형외과 안내문")
+        self.assertEqual(guides[0]["classification"], "PUBLIC")
+
+    def test_public_clinic_guides_search_is_intentionally_vulnerable(self):
+        response = self.client.get("/api/public/clinic-guides/search?q=%25%27)%20OR%201=1%20--%20")
+
+        self.assertEqual(response.status_code, 200)
+        guides = response.get_json()["clinic_guides"]
+        self.assertGreaterEqual(len(guides), 3)
+        self.assertIn("SENSITIVE", {guide["classification"] for guide in guides})
+
+    def test_vulnerable_public_clinic_guides_search_records_security_event(self):
+        response = self.client.get("/api/public/clinic-guides/search?q=정형외과")
+
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            event = db.session.scalar(
+                select(SecurityEvent).where(
+                    SecurityEvent.event_type == "SQLI_CLINIC_GUIDE_SEARCH_USED"
+                )
+            )
+            self.assertIsNotNone(event)
+
+    def test_public_clinic_guides_search_returns_message_for_sql_errors(self):
+        response = self.client.get(
+            "/api/public/clinic-guides/search?q=%25%27)%20UNION%20SELECT%20%27only-one%27%20--%20"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("검색어를 처리할 수 없습니다", response.get_json()["error"])
+
+    def test_doctors_search_returns_message_for_sql_errors(self):
+        response = self.client.get("/api/doctors/search?q=%25%27)%20UNION%20SELECT%201%20--%20")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("검색어를 처리할 수 없습니다", response.get_json()["error"])
 
     def test_patient_appointments_are_scoped_to_self(self):
         self.login("alice", "PatientPass123!")
@@ -362,6 +509,44 @@ class ApiTestCase(unittest.TestCase):
         download_response.close()
         with self.app.app_context():
             self.assertEqual(db.session.query(MedicalDocument).count(), 4)
+
+    def test_bulk_document_download_triggers_soar_response(self):
+        self.login("alice", "PatientPass123!")
+        document_ids = []
+        for index in range(3):
+            upload_response = self.client.post(
+                "/api/storage/upload",
+                data={
+                    "file": (io.BytesIO(f"sample document {index}".encode()), f"sample-{index}.txt"),
+                    "title": f"샘플 업로드 {index}",
+                    "document_type": "테스트 문서",
+                },
+                content_type="multipart/form-data",
+            )
+            self.assertEqual(upload_response.status_code, 201)
+            document_ids.append(upload_response.get_json()["document"]["id"])
+
+        for document_id in document_ids:
+            download_response = self.client.get(f"/api/storage/download/{document_id}")
+            self.assertEqual(download_response.status_code, 200)
+            download_response.close()
+
+        with self.app.app_context():
+            event_types = {
+                event.event_type
+                for event in db.session.scalars(select(SecurityEvent)).all()
+            }
+            self.assertIn("BULK_DOCUMENT_DOWNLOAD", event_types)
+            self.assertIn("SOAR_IP_BLOCK_SIMULATED", event_types)
+            self.assertIn("SOAR_SESSION_REVOKED", event_types)
+            self.assertIn("SOAR_EVIDENCE_COLLECTED", event_types)
+            session_record = db.session.scalar(
+                select(UserSession).order_by(UserSession.created_at.desc())
+            )
+            self.assertIsNotNone(session_record.revoked_at)
+
+        response = self.client.get("/api/profile")
+        self.assertEqual(response.status_code, 302)
 
     def test_staff_upload_requires_patient_public_id(self):
         self.login("staff", "StaffPass123!")

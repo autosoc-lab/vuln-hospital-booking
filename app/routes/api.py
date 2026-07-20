@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from flask import Blueprint, abort, current_app, g, jsonify, request, send_file
 from sqlalchemy import or_, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import joinedload
 from werkzeug.utils import secure_filename, safe_join
 
@@ -30,6 +30,7 @@ from app.pdf import render_text_pdf
 from app.security_events import detect_bulk_document_download, record_security_event
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
+SEARCH_SQL_ERROR_MESSAGE = "검색어를 처리할 수 없습니다. 검색 조건을 다시 확인해 주세요."
 
 
 def isoformat(value):
@@ -287,8 +288,18 @@ def search_doctors():
         sql += " AND departments.name = '" + department + "'"
     sql += " ORDER BY doctors.name ASC"
 
-    rows = db.session.execute(text(sql)).mappings().all()
-    db.session.commit()
+    try:
+        rows = db.session.execute(text(sql)).mappings().all()
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        record_security_event(
+            "SQLI_QUERY_ERROR",
+            severity="LOW",
+            details={"surface": "doctor_search_api"},
+        )
+        return jsonify({"error": SEARCH_SQL_ERROR_MESSAGE}), 400
+
     return jsonify(
         {
             "doctors": [
@@ -336,8 +347,18 @@ def search_public_clinic_guides():
         )
     sql += " ORDER BY medical_documents.created_at DESC"
 
-    rows = db.session.execute(text(sql)).mappings().all()
-    db.session.commit()
+    try:
+        rows = db.session.execute(text(sql)).mappings().all()
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        record_security_event(
+            "SQLI_QUERY_ERROR",
+            severity="LOW",
+            details={"surface": "clinic_guides_api"},
+        )
+        return jsonify({"error": SEARCH_SQL_ERROR_MESSAGE}), 400
+
     return jsonify({"clinic_guides": [serialize_public_guide(row) for row in rows]})
 
 

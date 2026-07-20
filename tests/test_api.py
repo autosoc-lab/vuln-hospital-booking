@@ -115,6 +115,28 @@ class ApiTestCase(unittest.TestCase):
         self.assertIn("예약부터 진료까지 더 쉽고 편리하게".encode(), response.data)
         self.assertIn("빠른 예약".encode(), response.data)
         self.assertIn("주요 진료과".encode(), response.data)
+        self.assertIn("공개 진료 안내문".encode(), response.data)
+
+    def test_clinic_guides_page_supports_public_search(self):
+        response = self.client.get("/clinic-guides?q=정형외과")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("진료 안내문".encode(), response.data)
+        self.assertIn("정형외과 안내문".encode(), response.data)
+        self.assertNotIn("소화기내과 진료의뢰서".encode(), response.data)
+
+    def test_clinic_guides_page_search_is_intentionally_vulnerable(self):
+        response = self.client.get("/clinic-guides?q=%25%27)%20OR%201=1%20--%20")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("정형외과 안내문".encode(), response.data)
+        self.assertIn("소화기내과 진료의뢰서".encode(), response.data)
+
+    def test_clinic_guides_page_shows_message_for_sql_errors(self):
+        response = self.client.get("/clinic-guides?q=%25%27)%20UNION%20SELECT%20%27only-one%27%20--%20")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("검색어를 처리할 수 없습니다".encode(), response.data)
 
     def test_profile_page_is_available_to_logged_in_users(self):
         self.login("alice", "PatientPass123!")
@@ -143,6 +165,14 @@ class ApiTestCase(unittest.TestCase):
         self.assertIn("김도현".encode(), response.data)
         self.assertIn("이서연".encode(), response.data)
         self.assertIn("박지훈".encode(), response.data)
+
+    def test_doctors_page_shows_message_for_sql_errors(self):
+        self.login("alice", "PatientPass123!")
+
+        response = self.client.get("/doctors?q=%25%27)%20UNION%20SELECT%201,2%20--%20")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("검색어를 처리할 수 없습니다".encode(), response.data)
 
     def test_doctors_search_filters_by_name_or_specialty(self):
         response = self.client.get("/api/doctors/search?q=소화기")
@@ -206,6 +236,20 @@ class ApiTestCase(unittest.TestCase):
                 )
             )
             self.assertIsNotNone(event)
+
+    def test_public_clinic_guides_search_returns_message_for_sql_errors(self):
+        response = self.client.get(
+            "/api/public/clinic-guides/search?q=%25%27)%20UNION%20SELECT%20%27only-one%27%20--%20"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("검색어를 처리할 수 없습니다", response.get_json()["error"])
+
+    def test_doctors_search_returns_message_for_sql_errors(self):
+        response = self.client.get("/api/doctors/search?q=%25%27)%20UNION%20SELECT%201%20--%20")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("검색어를 처리할 수 없습니다", response.get_json()["error"])
 
     def test_patient_appointments_are_scoped_to_self(self):
         self.login("alice", "PatientPass123!")

@@ -75,10 +75,11 @@ flask --app run seed-db
 
 ## SQL Injection 실습 모드
 
-의사 검색 API와 진료 안내문 검색 API는 인증 없이 호출할 수 있는 공개 검색 기능입니다.
+의사 검색 API와 진료 안내문 검색 화면/API는 인증 없이 호출할 수 있는 공개 검색 기능입니다.
 
 | 엔드포인트 | 메서드 | 설명 |
 | --- | --- | --- |
+| `/clinic-guides` | `GET` | 공개 진료 안내문 검색 화면 |
 | `/api/doctors/search` | `GET` | 공개 의사 검색 |
 | `/api/public/clinic-guides/search` | `GET` | 공개 진료 안내문 검색 |
 

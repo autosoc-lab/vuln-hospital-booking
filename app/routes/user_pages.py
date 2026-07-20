@@ -14,6 +14,7 @@ from flask import (
     url_for,
 )
 from sqlalchemy import or_, select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 from werkzeug.utils import safe_join, secure_filename
 
@@ -40,6 +41,7 @@ from app.pdf import render_text_pdf
 from app.security_events import record_security_event
 
 user_pages_bp = Blueprint("user_pages", __name__)
+SEARCH_SQL_ERROR_MESSAGE = "검색어를 처리할 수 없습니다. 검색 조건을 다시 확인해 주세요."
 
 
 def can_view_appointment(appointment):
@@ -160,11 +162,23 @@ def doctors():
         sql += " AND departments.name = '" + department_name + "'"
     sql += " ORDER BY doctors.name ASC"
 
-    doctor_ids = [
-        row["id"]
-        for row in db.session.execute(text(sql)).mappings().all()
-    ]
-    db.session.commit()
+    error_message = None
+    try:
+        doctor_ids = [
+            row["id"]
+            for row in db.session.execute(text(sql)).mappings().all()
+        ]
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        record_security_event(
+            "SQLI_QUERY_ERROR",
+            severity="LOW",
+            details={"surface": "doctor_search_page"},
+        )
+        doctor_ids = []
+        error_message = SEARCH_SQL_ERROR_MESSAGE
+
     doctors = []
     if doctor_ids:
         doctors = (
@@ -187,6 +201,7 @@ def doctors():
         departments=departments,
         search_term=search_term,
         department_name=department_name,
+        error_message=error_message,
     )
 
 

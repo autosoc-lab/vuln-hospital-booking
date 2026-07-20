@@ -665,6 +665,11 @@ dd {
   overflow-wrap: anywhere;
 }
 
+.compact-dl {
+  grid-template-columns: 96px 1fr;
+  margin-top: 18px;
+}
+
 .history-list {
   display: grid;
   gap: 14px;
@@ -707,6 +712,12 @@ dd {
   border-color: #bbf7d0;
   background: #f0fdf4;
   color: #166534;
+}
+
+.search-error {
+  margin: 0 0 20px;
+  max-width: none;
+  text-align: left;
 }
 
 @media (max-width: 720px) {

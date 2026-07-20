@@ -1,12 +1,12 @@
 import os
 
-from flask import Blueprint, current_app, jsonify, render_template, request
-from sqlalchemy import text
+from flask import Blueprint, abort, current_app, jsonify, render_template, request, send_file
+from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.utils import safe_join
 
 from app.db import db
-from app.models import CLASSIFICATION_PUBLIC
+from app.models import CLASSIFICATION_PUBLIC, MedicalDocument
 from app.security_events import record_security_event
 
 main_bp = Blueprint("main", __name__)
@@ -74,6 +74,29 @@ def clinic_guides():
         guides=guides,
         search_term=search_term,
         error_message=error_message,
+    )
+
+
+@main_bp.get("/clinic-guides/<public_id>/document")
+def clinic_guide_document(public_id):
+    document = db.session.scalar(
+        select(MedicalDocument).where(
+            MedicalDocument.public_id == public_id,
+            MedicalDocument.classification == CLASSIFICATION_PUBLIC,
+        )
+    )
+    if not document:
+        abort(404)
+
+    storage_root = os.path.abspath(current_app.config["DOCUMENT_STORAGE_ROOT"])
+    file_path = safe_join(storage_root, document.file_path)
+    if not file_path or not os.path.isfile(file_path):
+        abort(404)
+
+    return send_file(
+        file_path,
+        as_attachment=False,
+        download_name=os.path.basename(document.file_path),
     )
 
 

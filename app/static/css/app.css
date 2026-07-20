@@ -449,6 +449,12 @@ p {
   padding: 20px;
 }
 
+.guide-card-link {
+  color: inherit;
+  display: block;
+  text-decoration: none;
+}
+
 .metric-card span,
 .admin-action span,
 .table-muted {

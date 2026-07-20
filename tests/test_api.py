@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -123,7 +124,37 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("진료 안내문".encode(), response.data)
         self.assertIn("정형외과 안내문".encode(), response.data)
+        self.assertIn("/clinic-guides/".encode(), response.data)
         self.assertNotIn("소화기내과 진료의뢰서".encode(), response.data)
+
+    def test_public_clinic_guide_document_can_be_viewed(self):
+        with self.app.app_context():
+            document = db.session.scalar(
+                select(MedicalDocument).where(MedicalDocument.title == "정형외과 안내문")
+            )
+            document_id = document.public_id
+            absolute_path = os.path.join(self.storage_dir, document.file_path)
+            os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
+            with open(absolute_path, "wb") as handle:
+                handle.write(b"%PDF public guide")
+
+        response = self.client.get(f"/clinic-guides/{document_id}/document")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertEqual(response.data, b"%PDF public guide")
+        response.close()
+
+    def test_sensitive_document_cannot_be_viewed_as_public_clinic_guide(self):
+        with self.app.app_context():
+            document = db.session.scalar(
+                select(MedicalDocument).where(MedicalDocument.title == "소화기내과 진료의뢰서")
+            )
+            document_id = document.public_id
+
+        response = self.client.get(f"/clinic-guides/{document_id}/document")
+
+        self.assertEqual(response.status_code, 404)
 
     def test_clinic_guides_page_search_is_intentionally_vulnerable(self):
         response = self.client.get("/clinic-guides?q=%25%27)%20OR%201=1%20--%20")

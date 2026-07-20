@@ -25,7 +25,7 @@
 
   <section class="grid-list">
     {% for guide in guides %}
-      <article class="card">
+      <a class="card guide-card-link" href="{{ url_for('main.clinic_guide_document', public_id=guide.id) }}">
         <div class="card-header">
           <div>
             <h2>{{ guide.title }}</h2>
@@ -39,7 +39,7 @@
           <dt>문서 ID</dt>
           <dd>{{ guide.id }}</dd>
         </dl>
-      </article>
+      </a>
     {% else %}
       <p class="empty-state">검색 결과가 없습니다.</p>
     {% endfor %}

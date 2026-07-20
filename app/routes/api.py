@@ -2,7 +2,7 @@ import os
 from uuid import uuid4
 
 from flask import Blueprint, abort, current_app, g, jsonify, request, send_file
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from werkzeug.utils import secure_filename, safe_join
@@ -12,6 +12,7 @@ from app.db import db
 from app.models import (
     APPOINTMENT_STATUS_SCHEDULED,
     CLASSIFICATION_INTERNAL,
+    CLASSIFICATION_PUBLIC,
     Appointment,
     AppointmentStatusHistory,
     Doctor,
@@ -26,6 +27,7 @@ from app.models import (
     utc_now,
 )
 from app.pdf import render_text_pdf
+from app.security_events import detect_bulk_document_download, record_security_event
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -118,6 +120,31 @@ def serialize_generated_pdf(generated_pdf):
         "filename": generated_pdf.filename,
         "created_at": isoformat(generated_pdf.created_at),
         "updated_at": isoformat(generated_pdf.updated_at),
+    }
+
+
+def serialize_doctor_search_result(row):
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "specialty": row["specialty"],
+        "bio": row["bio"],
+        "department": {
+            "id": row["department_id"],
+            "name": row["department_name"],
+            "description": row["department_description"],
+        },
+    }
+
+
+def serialize_public_guide(row):
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "document_type": row["document_type"],
+        "classification": row["classification"],
+        "department": row["department"],
+        "doctor": row["doctor"],
     }
 
 
@@ -220,40 +247,98 @@ def profile():
 
 
 @api_bp.get("/doctors/search")
-@login_required
 def search_doctors():
     search_term = request.args.get("q", "").strip()
     department = request.args.get("department", "").strip()
-    include_slots = request.args.get("include_slots", "").lower() in {"1", "true", "yes"}
+    record_security_event(
+        "SQLI_DOCTOR_SEARCH_USED",
+        severity="MEDIUM",
+        details={
+            "query_length": len(search_term),
+            "department_length": len(department),
+        },
+        commit=False,
+    )
 
-    query = select(Doctor).options(joinedload(Doctor.department))
-    if include_slots:
-        query = query.options(joinedload(Doctor.availability_slots))
+    sql = """
+        SELECT
+            doctors.public_id AS id,
+            doctors.name AS name,
+            doctors.specialty AS specialty,
+            doctors.bio AS bio,
+            departments.id AS department_id,
+            departments.name AS department_name,
+            departments.description AS department_description
+        FROM doctors
+        JOIN departments ON departments.id = doctors.department_id
+        WHERE 1 = 1
+    """
     if search_term:
-        pattern = f"%{search_term}%"
-        query = query.where(
-            or_(
-                Doctor.name.ilike(pattern),
-                Doctor.specialty.ilike(pattern),
-                Doctor.bio.ilike(pattern),
-            )
+        sql += (
+            " AND (doctors.name LIKE '%"
+            + search_term
+            + "%' OR doctors.specialty LIKE '%"
+            + search_term
+            + "%' OR doctors.bio LIKE '%"
+            + search_term
+            + "%')"
         )
     if department:
-        query = query.where(Doctor.department.has(name=department))
+        sql += " AND departments.name = '" + department + "'"
+    sql += " ORDER BY doctors.name ASC"
 
-    doctors = (
-        db.session.scalars(query.order_by(Doctor.name.asc()))
-        .unique()
-        .all()
-    )
+    rows = db.session.execute(text(sql)).mappings().all()
+    db.session.commit()
     return jsonify(
         {
             "doctors": [
-                serialize_doctor(doctor, include_slots=include_slots)
-                for doctor in doctors
+                serialize_doctor_search_result(row)
+                for row in rows
             ]
         }
     )
+
+
+@api_bp.get("/public/clinic-guides/search")
+def search_public_clinic_guides():
+    search_term = request.args.get("q", "").strip()
+    record_security_event(
+        "SQLI_CLINIC_GUIDE_SEARCH_USED",
+        severity="MEDIUM",
+        details={"query_length": len(search_term)},
+        commit=False,
+    )
+
+    sql = f"""
+        SELECT
+            medical_documents.public_id AS id,
+            medical_documents.title AS title,
+            medical_documents.document_type AS document_type,
+            medical_documents.classification AS classification,
+            departments.name AS department,
+            doctors.name AS doctor
+        FROM medical_documents
+        LEFT JOIN doctors ON doctors.id = medical_documents.author_doctor_id
+        LEFT JOIN departments ON departments.id = doctors.department_id
+        WHERE medical_documents.classification = '{CLASSIFICATION_PUBLIC}'
+    """
+    if search_term:
+        sql += (
+            " AND (medical_documents.title LIKE '%"
+            + search_term
+            + "%' OR medical_documents.document_type LIKE '%"
+            + search_term
+            + "%' OR departments.name LIKE '%"
+            + search_term
+            + "%' OR doctors.name LIKE '%"
+            + search_term
+            + "%')"
+        )
+    sql += " ORDER BY medical_documents.created_at DESC"
+
+    rows = db.session.execute(text(sql)).mappings().all()
+    db.session.commit()
+    return jsonify({"clinic_guides": [serialize_public_guide(row) for row in rows]})
 
 
 @api_bp.get("/appointments")
@@ -448,6 +533,8 @@ def download_document(public_id):
     file_path = safe_join(storage_root(), document.file_path)
     if not file_path or not os.path.isfile(file_path):
         abort(404)
+
+    detect_bulk_document_download(document)
 
     return send_file(
         file_path,

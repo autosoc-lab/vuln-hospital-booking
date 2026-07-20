@@ -13,7 +13,7 @@ from flask import (
     send_file,
     url_for,
 )
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import joinedload
 from werkzeug.utils import safe_join, secure_filename
 
@@ -37,6 +37,7 @@ from app.models import (
     utc_now,
 )
 from app.pdf import render_text_pdf
+from app.security_events import record_security_event
 
 user_pages_bp = Blueprint("user_pages", __name__)
 
@@ -128,23 +129,57 @@ def owner_from_upload_form():
 def doctors():
     search_term = request.args.get("q", "").strip()
     department_name = request.args.get("department", "").strip()
-    query = select(Doctor).options(
-        joinedload(Doctor.department),
-        joinedload(Doctor.availability_slots),
+    record_security_event(
+        "SQLI_DOCTOR_SEARCH_USED",
+        severity="MEDIUM",
+        details={
+            "surface": "page",
+            "query_length": len(search_term),
+            "department_length": len(department_name),
+        },
+        commit=False,
     )
+
+    sql = """
+        SELECT doctors.id AS id
+        FROM doctors
+        JOIN departments ON departments.id = doctors.department_id
+        WHERE 1 = 1
+    """
     if search_term:
-        pattern = f"%{search_term}%"
-        query = query.where(
-            or_(
-                Doctor.name.ilike(pattern),
-                Doctor.specialty.ilike(pattern),
-                Doctor.bio.ilike(pattern),
-            )
+        sql += (
+            " AND (doctors.name LIKE '%"
+            + search_term
+            + "%' OR doctors.specialty LIKE '%"
+            + search_term
+            + "%' OR doctors.bio LIKE '%"
+            + search_term
+            + "%')"
         )
     if department_name:
-        query = query.where(Doctor.department.has(name=department_name))
+        sql += " AND departments.name = '" + department_name + "'"
+    sql += " ORDER BY doctors.name ASC"
 
-    doctors = db.session.scalars(query.order_by(Doctor.name.asc())).unique()
+    doctor_ids = [
+        row["id"]
+        for row in db.session.execute(text(sql)).mappings().all()
+    ]
+    db.session.commit()
+    doctors = []
+    if doctor_ids:
+        doctors = (
+            db.session.scalars(
+                select(Doctor)
+                .options(
+                    joinedload(Doctor.department),
+                    joinedload(Doctor.availability_slots),
+                )
+                .where(Doctor.id.in_(doctor_ids))
+                .order_by(Doctor.name.asc())
+            )
+            .unique()
+            .all()
+        )
     departments = db.session.scalars(select(Department).order_by(Department.name.asc())).all()
     return render_template(
         "doctors.html",

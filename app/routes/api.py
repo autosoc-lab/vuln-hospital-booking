@@ -11,6 +11,7 @@ from app.auth import ensure_aware_utc, login_required
 from app.db import db
 from app.models import (
     APPOINTMENT_STATUS_SCHEDULED,
+    CLASSIFICATION_ADMIN_ONLY,
     CLASSIFICATION_INTERNAL,
     CLASSIFICATION_PUBLIC,
     Appointment,
@@ -154,7 +155,11 @@ def storage_root():
 
 
 def can_view_document(document):
-    if g.current_user.role in {ROLE_STAFF, ROLE_ADMIN}:
+    if g.current_user.role == ROLE_ADMIN:
+        return True
+    if document.classification == CLASSIFICATION_ADMIN_ONLY:
+        return False
+    if g.current_user.role == ROLE_STAFF:
         return True
     if document.owner_patient_user_id == g.current_user.id:
         return True
@@ -209,6 +214,9 @@ def scoped_document_query():
         .order_by(MedicalDocument.created_at.desc())
     )
 
+    if g.current_user.role == ROLE_ADMIN:
+        return query
+    query = query.where(MedicalDocument.classification != CLASSIFICATION_ADMIN_ONLY)
     if g.current_user.role == ROLE_PATIENT:
         return query.where(MedicalDocument.owner_patient_user_id == g.current_user.id)
     if g.current_user.role == ROLE_DOCTOR:
@@ -216,7 +224,7 @@ def scoped_document_query():
         if not doctor_profile:
             return None
         return query.where(MedicalDocument.author_doctor_id == doctor_profile.id)
-    if g.current_user.role in {ROLE_STAFF, ROLE_ADMIN}:
+    if g.current_user.role == ROLE_STAFF:
         return query
 
     abort(403)

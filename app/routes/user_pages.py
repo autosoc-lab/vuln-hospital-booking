@@ -22,6 +22,7 @@ from app.auth import login_required
 from app.db import db
 from app.models import (
     APPOINTMENT_STATUS_SCHEDULED,
+    CLASSIFICATION_ADMIN_ONLY,
     CLASSIFICATION_INTERNAL,
     Appointment,
     AppointmentStatusHistory,
@@ -60,7 +61,11 @@ def can_view_appointment(appointment):
 
 def can_view_document(document):
     user = g.current_user
-    if user.role in {ROLE_ADMIN, ROLE_STAFF}:
+    if user.role == ROLE_ADMIN:
+        return True
+    if document.classification == CLASSIFICATION_ADMIN_ONLY:
+        return False
+    if user.role == ROLE_STAFF:
         return True
     if document.owner_patient_user_id == user.id:
         return True
@@ -317,6 +322,11 @@ def documents():
     query = document_query().order_by(MedicalDocument.created_at.desc())
     search_term = request.args.get("q", "").strip()
     document_type = request.args.get("document_type", "").strip()
+
+    if g.current_user.role == ROLE_ADMIN:
+        pass
+    else:
+        query = query.where(MedicalDocument.classification != CLASSIFICATION_ADMIN_ONLY)
 
     if g.current_user.role == ROLE_PATIENT:
         query = query.where(MedicalDocument.owner_patient_user_id == g.current_user.id)

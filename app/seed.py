@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash
 from app.db import db
 from app.models import (
     APPOINTMENT_STATUS_SCHEDULED,
+    CLASSIFICATION_ADMIN_ONLY,
     CLASSIFICATION_INTERNAL,
     CLASSIFICATION_PUBLIC,
     CLASSIFICATION_SENSITIVE,
@@ -197,6 +198,14 @@ def seed_database():
             classification=CLASSIFICATION_PUBLIC,
             file_path="documents/patient-bob/orthopedics-guide.pdf",
             file_size=65536,
+        ),
+        "admin_audit_export": MedicalDocument(
+            owner_patient=users["patient_alice"],
+            title="관리자 전용 의료문서 반출 감사자료",
+            document_type="감사자료",
+            classification=CLASSIFICATION_ADMIN_ONLY,
+            file_path="documents/admin/audit-export-summary.pdf",
+            file_size=131072,
         ),
     }
 

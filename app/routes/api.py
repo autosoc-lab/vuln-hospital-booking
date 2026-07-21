@@ -2,6 +2,7 @@ import io
 import os
 from uuid import uuid4
 
+import requests
 from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import or_, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -358,6 +359,38 @@ def search_public_clinic_guides():
         return jsonify({"error": SEARCH_SQL_ERROR_MESSAGE}), 400
 
     return jsonify({"clinic_guides": [serialize_public_guide(row) for row in rows]})
+
+
+@api_bp.get("/public/clinic-guides/external-preview")
+def preview_external_clinic_guide():
+    url = request.args.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "url is required"}), 400
+
+    record_security_event(
+        "SSRF_EXTERNAL_PREVIEW_USED",
+        severity="MEDIUM",
+        details={"url": url},
+        commit=False,
+    )
+
+    try:
+        response = requests.get(url, timeout=5)
+    except requests.RequestException:
+        record_security_event(
+            "SSRF_FETCH_ERROR",
+            severity="LOW",
+            details={"url": url},
+        )
+        return jsonify({"error": "외부 자료를 가져오지 못했습니다."}), 502
+
+    return jsonify(
+        {
+            "url": url,
+            "status_code": response.status_code,
+            "content": response.text[:5000],
+        }
+    )
 
 
 @api_bp.get("/appointments")

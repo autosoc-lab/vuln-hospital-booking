@@ -259,6 +259,52 @@ class ApiTestCase(unittest.TestCase):
         self.assertIn("SENSITIVE", classifications)
         self.assertIn(CLASSIFICATION_ADMIN_ONLY, classifications)
 
+    def test_public_clinic_guide_download_returns_public_document(self):
+        with self.app.app_context():
+            document = db.session.scalar(
+                select(MedicalDocument).where(MedicalDocument.title == "정형외과 안내문")
+            )
+            document_id = document.public_id
+            absolute_path = os.path.join(self.storage_dir, document.file_path)
+            os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
+            with open(absolute_path, "wb") as handle:
+                handle.write(b"%PDF public guide download")
+
+        response = self.client.get(
+            "/api/public/clinic-guides/download",
+            query_string={"document_id": document_id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertEqual(response.data, b"%PDF public guide download")
+        response.close()
+
+    def test_public_clinic_guide_download_is_intentionally_vulnerable(self):
+        with self.app.app_context():
+            document = db.session.scalar(
+                select(MedicalDocument).where(
+                    MedicalDocument.classification == CLASSIFICATION_ADMIN_ONLY
+                )
+            )
+            document_id = document.public_id
+            absolute_path = os.path.join(self.storage_dir, document.file_path)
+            os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
+            with open(absolute_path, "wb") as handle:
+                handle.write(b"%PDF admin only through sqli")
+
+        response = self.client.get(
+            "/api/public/clinic-guides/download",
+            query_string={
+                "document_id": f"' OR medical_documents.public_id = '{document_id}' -- "
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertEqual(response.data, b"%PDF admin only through sqli")
+        response.close()
+
     def test_vulnerable_public_clinic_guides_search_records_security_event(self):
         response = self.client.get("/api/public/clinic-guides/search?q=정형외과")
 

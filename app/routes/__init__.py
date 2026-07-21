@@ -1,10 +1,10 @@
 import os
 
-from flask import Blueprint, abort, current_app, jsonify, render_template, request, send_file
+from flask import Blueprint, abort, current_app, jsonify, render_template, request
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
-from werkzeug.utils import safe_join
 
+from app import storage
 from app.db import db
 from app.models import CLASSIFICATION_PUBLIC, MedicalDocument
 from app.security_events import record_security_event
@@ -88,15 +88,10 @@ def clinic_guide_document(public_id):
     if not document:
         abort(404)
 
-    storage_root = os.path.abspath(current_app.config["DOCUMENT_STORAGE_ROOT"])
-    file_path = safe_join(storage_root, document.file_path)
-    if not file_path or not os.path.isfile(file_path):
-        abort(404)
-
-    return send_file(
-        file_path,
+    return storage.send_stored_file(
+        document.file_path,
+        os.path.basename(document.file_path),
         as_attachment=False,
-        download_name=os.path.basename(document.file_path),
     )
 
 
@@ -119,16 +114,9 @@ def health_ready():
     finally:
         db.session.remove()
 
-    storage_root = os.path.abspath(current_app.config["DOCUMENT_STORAGE_ROOT"])
-    healthcheck_path = safe_join(storage_root, current_app.config["STORAGE_HEALTHCHECK_PATH"])
-    if not healthcheck_path:
-        checks["storage"] = "error"
-        return jsonify({"status": "not_ready", "checks": checks}), 503
     try:
-        os.makedirs(storage_root, exist_ok=True)
-        with open(healthcheck_path, "a", encoding="utf-8"):
-            os.utime(healthcheck_path, None)
-    except OSError as exc:
+        storage.check_storage_health()
+    except Exception as exc:
         current_app.logger.warning("Storage readiness check failed: %s", exc)
         checks["storage"] = "error"
         return jsonify({"status": "not_ready", "checks": checks}), 503

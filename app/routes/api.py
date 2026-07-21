@@ -1,12 +1,14 @@
+import io
 import os
 from uuid import uuid4
 
-from flask import Blueprint, abort, current_app, g, jsonify, request, send_file
+from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import or_, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import joinedload
 from werkzeug.utils import secure_filename, safe_join
 
+from app import storage
 from app.auth import ensure_aware_utc, login_required
 from app.db import db
 from app.models import (
@@ -147,10 +149,6 @@ def serialize_public_guide(row):
         "department": row["department"],
         "doctor": row["doctor"],
     }
-
-
-def storage_root():
-    return os.path.abspath(current_app.config["DOCUMENT_STORAGE_ROOT"])
 
 
 def can_view_document(document):
@@ -462,11 +460,10 @@ def render_pdf():
     filename = f"{filename_base[:80]}-{uuid4().hex}.pdf"
     relative_dir = safe_join("generated_pdfs", g.current_user.public_id)
     relative_path = safe_join(relative_dir, filename)
-    absolute_dir = safe_join(storage_root(), relative_dir)
-    absolute_path = safe_join(storage_root(), relative_path)
-    os.makedirs(absolute_dir, exist_ok=True)
 
-    render_text_pdf(absolute_path, title, body)
+    buffer = io.BytesIO()
+    render_text_pdf(buffer, title, body)
+    storage.save_bytes(relative_path, buffer.getvalue())
 
     generated_pdf = GeneratedPdf(
         generated_by_user=g.current_user,
@@ -490,11 +487,9 @@ def download_pdf(public_id):
     if not can_download_pdf(generated_pdf):
         abort(403)
 
-    file_path = safe_join(storage_root(), generated_pdf.storage_path)
-    if not file_path or not os.path.isfile(file_path):
-        abort(404)
-
-    return send_file(file_path, as_attachment=True, download_name=generated_pdf.filename)
+    return storage.send_stored_file(
+        generated_pdf.storage_path, generated_pdf.filename, as_attachment=True
+    )
 
 
 @api_bp.post("/storage/upload")
@@ -515,10 +510,7 @@ def upload_document():
     stored_filename = f"{uuid4().hex}-{original_filename}"
     relative_dir = safe_join("uploads", owner.public_id)
     relative_path = safe_join(relative_dir, stored_filename)
-    absolute_dir = safe_join(storage_root(), relative_dir)
-    absolute_path = safe_join(storage_root(), relative_path)
-    os.makedirs(absolute_dir, exist_ok=True)
-    uploaded_file.save(absolute_path)
+    storage.save_upload(relative_path, uploaded_file)
 
     document = MedicalDocument(
         owner_patient=owner,
@@ -527,7 +519,7 @@ def upload_document():
         document_type=request.form.get("document_type", "").strip() or "테스트 문서",
         classification=request.form.get("classification", "").strip() or CLASSIFICATION_INTERNAL,
         file_path=relative_path,
-        file_size=os.path.getsize(absolute_path),
+        file_size=storage.stored_file_size(relative_path),
     )
     db.session.add(document)
     db.session.commit()
@@ -551,14 +543,10 @@ def download_document(public_id):
     if not can_view_document(document):
         abort(403)
 
-    file_path = safe_join(storage_root(), document.file_path)
-    if not file_path or not os.path.isfile(file_path):
-        abort(404)
-
     detect_bulk_document_download(document)
 
-    return send_file(
-        file_path,
+    return storage.send_stored_file(
+        document.file_path,
+        os.path.basename(document.file_path),
         as_attachment=True,
-        download_name=os.path.basename(document.file_path),
     )

@@ -2,3 +2,4 @@ Flask==3.0.3
 Flask-SQLAlchemy==3.1.1
 psycopg[binary]==3.2.13
 reportlab==3.6.12
+boto3==1.35.36

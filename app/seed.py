@@ -1,11 +1,14 @@
+import os
 from datetime import datetime, timezone
 
+from flask import current_app
 from sqlalchemy import func, select
 from werkzeug.security import generate_password_hash
 
 from app.db import db
 from app.models import (
     APPOINTMENT_STATUS_SCHEDULED,
+    CLASSIFICATION_ADMIN_ONLY,
     CLASSIFICATION_INTERNAL,
     CLASSIFICATION_PUBLIC,
     CLASSIFICATION_SENSITIVE,
@@ -23,11 +26,80 @@ from app.models import (
     User,
 )
 
+ADMIN_ONLY_DOCUMENT_TITLE = "관리자 전용 의료문서 반출 감사자료"
+ADMIN_ONLY_DOCUMENT_PATH = "documents/admin/audit-export-summary.pdf"
+ADMIN_ONLY_DOCUMENT_BYTES = b"""%PDF-1.1
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 101 >>
+stream
+BT
+/F1 18 Tf
+72 720 Td
+(Administrator-only medical document audit export) Tj
+0 -28 Td
+(Access: ADMIN_ONLY) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+trailer
+<< /Root 1 0 R >>
+%%EOF
+"""
+
+
+def ensure_admin_only_document_file():
+    storage_root = os.path.abspath(current_app.config["DOCUMENT_STORAGE_ROOT"])
+    absolute_path = os.path.join(storage_root, ADMIN_ONLY_DOCUMENT_PATH)
+    if os.path.isfile(absolute_path):
+        return False
+
+    os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
+    with open(absolute_path, "wb") as handle:
+        handle.write(ADMIN_ONLY_DOCUMENT_BYTES)
+    return True
+
+
+def seed_admin_only_document():
+    file_created = ensure_admin_only_document_file()
+    existing_document = db.session.scalar(
+        select(MedicalDocument).where(MedicalDocument.title == ADMIN_ONLY_DOCUMENT_TITLE)
+    )
+    if existing_document:
+        return file_created
+
+    owner = db.session.scalar(select(User).where(User.username == "alice"))
+    if not owner:
+        return file_created
+
+    document = MedicalDocument(
+        owner_patient=owner,
+        title=ADMIN_ONLY_DOCUMENT_TITLE,
+        document_type="감사자료",
+        classification=CLASSIFICATION_ADMIN_ONLY,
+        file_path=ADMIN_ONLY_DOCUMENT_PATH,
+        file_size=len(ADMIN_ONLY_DOCUMENT_BYTES),
+    )
+    db.session.add(document)
+    db.session.commit()
+    return True
+
 
 def seed_database():
     existing_users = db.session.scalar(select(func.count()).select_from(User))
     if existing_users:
-        return False
+        return seed_admin_only_document()
 
     users = {
         "admin": User(
@@ -198,6 +270,14 @@ def seed_database():
             file_path="documents/patient-bob/orthopedics-guide.pdf",
             file_size=65536,
         ),
+        "admin_audit_export": MedicalDocument(
+            owner_patient=users["patient_alice"],
+            title=ADMIN_ONLY_DOCUMENT_TITLE,
+            document_type="감사자료",
+            classification=CLASSIFICATION_ADMIN_ONLY,
+            file_path=ADMIN_ONLY_DOCUMENT_PATH,
+            file_size=len(ADMIN_ONLY_DOCUMENT_BYTES),
+        ),
     }
 
     generated_pdfs = [
@@ -224,5 +304,6 @@ def seed_database():
     db.session.add_all(documents.values())
     db.session.add_all(generated_pdfs)
     db.session.commit()
+    ensure_admin_only_document_file()
 
     return True

@@ -11,6 +11,7 @@ from app import create_app
 from app.db import db
 from app.models import (
     Appointment,
+    CLASSIFICATION_ADMIN_ONLY,
     DoctorAvailabilitySlot,
     GeneratedPdf,
     MedicalDocument,
@@ -253,8 +254,56 @@ class ApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         guides = response.get_json()["clinic_guides"]
-        self.assertGreaterEqual(len(guides), 3)
-        self.assertIn("SENSITIVE", {guide["classification"] for guide in guides})
+        classifications = {guide["classification"] for guide in guides}
+        self.assertGreaterEqual(len(guides), 4)
+        self.assertIn("SENSITIVE", classifications)
+        self.assertIn(CLASSIFICATION_ADMIN_ONLY, classifications)
+
+    def test_public_clinic_guide_download_returns_public_document(self):
+        with self.app.app_context():
+            document = db.session.scalar(
+                select(MedicalDocument).where(MedicalDocument.title == "정형외과 안내문")
+            )
+            document_id = document.public_id
+            absolute_path = os.path.join(self.storage_dir, document.file_path)
+            os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
+            with open(absolute_path, "wb") as handle:
+                handle.write(b"%PDF public guide download")
+
+        response = self.client.get(
+            "/api/public/clinic-guides/download",
+            query_string={"document_id": document_id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertEqual(response.data, b"%PDF public guide download")
+        response.close()
+
+    def test_public_clinic_guide_download_is_intentionally_vulnerable(self):
+        with self.app.app_context():
+            document = db.session.scalar(
+                select(MedicalDocument).where(
+                    MedicalDocument.classification == CLASSIFICATION_ADMIN_ONLY
+                )
+            )
+            document_id = document.public_id
+            absolute_path = os.path.join(self.storage_dir, document.file_path)
+            os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
+            with open(absolute_path, "wb") as handle:
+                handle.write(b"%PDF admin only through sqli")
+
+        response = self.client.get(
+            "/api/public/clinic-guides/download",
+            query_string={
+                "document_id": f"' OR medical_documents.public_id = '{document_id}' -- "
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertEqual(response.data, b"%PDF admin only through sqli")
+        response.close()
 
     def test_vulnerable_public_clinic_guides_search_records_security_event(self):
         response = self.client.get("/api/public/clinic-guides/search?q=정형외과")
@@ -330,7 +379,7 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(counts["staff"], 1)
         self.assertEqual(counts["admins"], 1)
         self.assertEqual(counts["appointments"], 2)
-        self.assertEqual(counts["documents"], 3)
+        self.assertEqual(counts["documents"], 4)
         self.assertEqual(counts["active_sessions"], 1)
 
     def test_admin_can_view_all_appointments_from_admin_api(self):
@@ -353,11 +402,41 @@ class ApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         documents = response.get_json()["documents"]
-        self.assertEqual(len(documents), 3)
+        self.assertEqual(len(documents), 4)
         self.assertEqual(
             {document["owner_patient"]["username"] for document in documents},
             {"alice", "bob"},
         )
+        self.assertIn(CLASSIFICATION_ADMIN_ONLY, {document["classification"] for document in documents})
+
+    def test_only_admin_can_download_admin_only_document(self):
+        with self.app.app_context():
+            document = db.session.scalar(
+                select(MedicalDocument).where(
+                    MedicalDocument.classification == CLASSIFICATION_ADMIN_ONLY
+                )
+            )
+            document_id = document.public_id
+            absolute_path = os.path.join(self.storage_dir, document.file_path)
+            os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
+            with open(absolute_path, "wb") as handle:
+                handle.write(b"%PDF admin only")
+
+        self.login("staff", "StaffPass123!")
+        response = self.client.get(f"/api/storage/download/{document_id}")
+        self.assertEqual(response.status_code, 403)
+
+        self.client.post("/logout")
+        self.login("alice", "PatientPass123!")
+        response = self.client.get(f"/api/storage/download/{document_id}")
+        self.assertEqual(response.status_code, 403)
+
+        self.client.post("/logout")
+        self.login("admin", "AdminPass123!")
+        response = self.client.get(f"/api/storage/download/{document_id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, b"%PDF admin only")
+        response.close()
 
     def test_admin_can_view_security_events(self):
         self.login("admin", "AdminPass123!")
@@ -469,6 +548,16 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(len(documents), 1)
         self.assertEqual(documents[0]["owner_patient"]["username"], "bob")
 
+    def test_staff_document_search_excludes_admin_only_documents(self):
+        self.login("staff", "StaffPass123!")
+
+        response = self.client.get("/api/documents/search")
+
+        self.assertEqual(response.status_code, 200)
+        documents = response.get_json()["documents"]
+        self.assertEqual(len(documents), 3)
+        self.assertNotIn(CLASSIFICATION_ADMIN_ONLY, {document["classification"] for document in documents})
+
     def test_pdf_render_and_download(self):
         self.login("alice", "PatientPass123!")
 
@@ -508,7 +597,7 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(download_response.data, b"sample document")
         download_response.close()
         with self.app.app_context():
-            self.assertEqual(db.session.query(MedicalDocument).count(), 4)
+            self.assertEqual(db.session.query(MedicalDocument).count(), 5)
 
     def test_bulk_document_download_triggers_soar_response(self):
         self.login("alice", "PatientPass123!")

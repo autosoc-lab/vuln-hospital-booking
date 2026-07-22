@@ -11,6 +11,7 @@ from app.auth import ensure_aware_utc, login_required
 from app.db import db
 from app.models import (
     APPOINTMENT_STATUS_SCHEDULED,
+    CLASSIFICATION_ADMIN_ONLY,
     CLASSIFICATION_INTERNAL,
     CLASSIFICATION_PUBLIC,
     Appointment,
@@ -154,7 +155,11 @@ def storage_root():
 
 
 def can_view_document(document):
-    if g.current_user.role in {ROLE_STAFF, ROLE_ADMIN}:
+    if g.current_user.role == ROLE_ADMIN:
+        return True
+    if document.classification == CLASSIFICATION_ADMIN_ONLY:
+        return False
+    if g.current_user.role == ROLE_STAFF:
         return True
     if document.owner_patient_user_id == g.current_user.id:
         return True
@@ -209,6 +214,9 @@ def scoped_document_query():
         .order_by(MedicalDocument.created_at.desc())
     )
 
+    if g.current_user.role == ROLE_ADMIN:
+        return query
+    query = query.where(MedicalDocument.classification != CLASSIFICATION_ADMIN_ONLY)
     if g.current_user.role == ROLE_PATIENT:
         return query.where(MedicalDocument.owner_patient_user_id == g.current_user.id)
     if g.current_user.role == ROLE_DOCTOR:
@@ -216,7 +224,7 @@ def scoped_document_query():
         if not doctor_profile:
             return None
         return query.where(MedicalDocument.author_doctor_id == doctor_profile.id)
-    if g.current_user.role in {ROLE_STAFF, ROLE_ADMIN}:
+    if g.current_user.role == ROLE_STAFF:
         return query
 
     abort(403)
@@ -360,6 +368,58 @@ def search_public_clinic_guides():
         return jsonify({"error": SEARCH_SQL_ERROR_MESSAGE}), 400
 
     return jsonify({"clinic_guides": [serialize_public_guide(row) for row in rows]})
+
+
+@api_bp.get("/public/clinic-guides/download")
+def download_public_clinic_guide():
+    document_id = request.args.get("document_id", "").strip()
+    if not document_id:
+        return jsonify({"error": "document_id is required"}), 400
+
+    record_security_event(
+        "SQLI_CLINIC_GUIDE_DOWNLOAD_USED",
+        severity="HIGH",
+        details={"document_id_length": len(document_id)},
+        commit=False,
+    )
+
+    sql = f"""
+        SELECT
+            medical_documents.public_id AS id,
+            medical_documents.title AS title,
+            medical_documents.classification AS classification,
+            medical_documents.file_path AS file_path
+        FROM medical_documents
+        WHERE medical_documents.classification = '{CLASSIFICATION_PUBLIC}'
+            AND medical_documents.public_id = '{document_id}'
+        ORDER BY medical_documents.created_at DESC
+        LIMIT 1
+    """
+
+    try:
+        row = db.session.execute(text(sql)).mappings().first()
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        record_security_event(
+            "SQLI_QUERY_ERROR",
+            severity="LOW",
+            details={"surface": "clinic_guides_download_api"},
+        )
+        return jsonify({"error": SEARCH_SQL_ERROR_MESSAGE}), 400
+
+    if not row:
+        abort(404)
+
+    file_path = safe_join(storage_root(), row["file_path"])
+    if not file_path or not os.path.isfile(file_path):
+        abort(404)
+
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=os.path.basename(row["file_path"]),
+    )
 
 
 @api_bp.get("/appointments")

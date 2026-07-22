@@ -2,19 +2,97 @@
 
 {% block content %}
   <section class="section-heading">
-    <p class="eyebrow">Render PDF</p>
-    <h1>PDF 생성</h1>
-    <p>입력한 내용을 PDF 파일로 변환합니다.</p>
+    <p class="eyebrow">Clinical Document</p>
+    <h1>진료 문서 작성</h1>
+    <p>진료 내용을 바탕으로 환자에게 제공할 문서를 생성합니다.</p>
   </section>
 
   <form class="form wide-form" method="post" action="{{ url_for('user_pages.new_pdf') }}">
     <label for="title">제목</label>
-    <input id="title" name="title" value="진료 메모">
+    <input id="title" name="title" value="김민지 진료 소견서">
 
-    <label for="body">본문</label>
-    <textarea id="body" name="body" rows="10" required>복통 상담 내용
-검사 예약 안내</textarea>
+    {% if patients %}
+      <label for="patient_public_id">환자</label>
+      <select id="patient_public_id" name="patient_public_id">
+        {% for patient in patients %}
+          <option value="{{ patient.public_id }}">{{ patient.full_name }} ({{ patient.username }})</option>
+        {% endfor %}
+      </select>
+    {% endif %}
 
-    <button type="submit">PDF 생성</button>
+    <label for="document_type">문서 유형</label>
+    <select id="document_type" name="document_type">
+      <option value="진료 소견서">진료 소견서</option>
+      <option value="진료 확인서">진료 확인서</option>
+      <option value="처방 안내서">처방 안내서</option>
+      <option value="검사 의뢰서">검사 의뢰서</option>
+      <option value="경과 기록지">경과 기록지</option>
+    </select>
+
+    <label for="diagnosis">진단명</label>
+    <input id="diagnosis" name="diagnosis" value="급성 위염 의심">
+
+    <label for="chief_complaint">주호소</label>
+    <input id="chief_complaint" name="chief_complaint" value="복통 및 오심">
+
+    <label for="clinical_note">진료 소견</label>
+    <textarea id="clinical_note" name="clinical_note" rows="5" required>상복부 압통이 있으며 추가 검사가 필요합니다.</textarea>
+
+    <label for="recommendation">처방/권고 사항</label>
+    <textarea id="recommendation" name="recommendation" rows="4">위내시경 검사 예약 및 식이 조절을 권고합니다.</textarea>
+
+    <label for="follow_up_plan">추적 관찰 계획</label>
+    <textarea id="follow_up_plan" name="follow_up_plan" rows="3">검사 결과 확인 후 1주 내 재진합니다.</textarea>
+
+    <label for="template_id">PDF 서식</label>
+    <select id="template_id" name="template_id">
+      <option value="standard_emr">기본 EMR 서식</option>
+      <option value="hospital_seal">병원 직인 포함</option>
+      <option value="insurance_submission">보험사 제출용</option>
+      <option value="external_referral">타 병원 의뢰용</option>
+    </select>
+
+    <label for="accent_color">강조 색상</label>
+    <select id="accent_color" name="accent_color">
+      <option value="blue">파랑</option>
+      <option value="green">초록</option>
+      <option value="gray">회색</option>
+      <option value="brand">병원 브랜드 색</option>
+    </select>
+
+    <label for="font_size">글자 크기</label>
+    <select id="font_size" name="font_size">
+      <option value="normal">보통</option>
+      <option value="small">작게</option>
+      <option value="large">크게</option>
+    </select>
+
+    <label for="header_text">머리말 문구</label>
+    <input id="header_text" name="header_text" value="Vulnerable Hospital Booking">
+
+    <label for="footer_text">꼬리말 문구</label>
+    <textarea id="footer_text" name="footer_text" rows="3">본 문서는 외부 제출용으로 발급되었습니다.</textarea>
+
+    <fieldset class="form-options">
+      <legend>출력 옵션</legend>
+      <label>
+        <input name="include_logo" type="checkbox" value="1" checked>
+        병원 로고 포함
+      </label>
+      <label>
+        <input name="include_guardian_summary" type="checkbox" value="1" checked>
+        보호자 설명용 요약 포함
+      </label>
+      <label>
+        <input name="large_text" type="checkbox" value="1">
+        큰 글씨
+      </label>
+      <label>
+        <input name="include_qr" type="checkbox" value="1" checked>
+        QR 검증 코드 포함
+      </label>
+    </fieldset>
+
+    <button type="submit">문서 생성</button>
   </form>
 {% endblock %}

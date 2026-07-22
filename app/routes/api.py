@@ -350,8 +350,17 @@ def search_public_clinic_guides():
     try:
         rows = db.session.execute(text(sql)).mappings().all()
         db.session.commit()
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
         db.session.rollback()
+        current_app.logger.warning(
+            "clinic_guides_search_sql_error",
+            extra={
+                "surface": "clinic_guides_api",
+                "query_length": len(search_term),
+                "error_type": exc.__class__.__name__,
+            },
+            exc_info=True,
+        )
         record_security_event(
             "SQLI_QUERY_ERROR",
             severity="LOW",

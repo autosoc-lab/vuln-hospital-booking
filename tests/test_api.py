@@ -59,6 +59,135 @@ class ApiTestCase(unittest.TestCase):
             follow_redirects=False,
         )
 
+    def register(self, username, full_name, email, password, password_confirm=None):
+        return self.client.post(
+            "/register",
+            data={
+                "username": username,
+                "full_name": full_name,
+                "email": email,
+                "password": password,
+                "password_confirm": password_confirm or password,
+            },
+            follow_redirects=False,
+        )
+
+    def test_register_page_renders_signup_form(self):
+        response = self.client.get("/register")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("회원가입".encode(), response.data)
+        self.assertIn("가입하기".encode(), response.data)
+
+    def test_register_creates_patient_account_and_logs_in(self):
+        response = self.register(
+            "charlie",
+            "최지우",
+            "charlie@example.local",
+            "Pass12",
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/")
+        with self.app.app_context():
+            user = db.session.scalar(select(User).where(User.username == "charlie"))
+            self.assertIsNotNone(user)
+            self.assertEqual(user.full_name, "최지우")
+            self.assertEqual(user.email, "charlie@example.local")
+            self.assertEqual(user.role, "PATIENT")
+            self.assertEqual(UserSession.query.filter_by(user_id=user.id).count(), 1)
+
+        profile_response = self.client.get("/api/profile")
+        self.assertEqual(profile_response.status_code, 200)
+        self.assertEqual(profile_response.get_json()["profile"]["username"], "charlie")
+
+    def test_register_rejects_password_confirmation_mismatch(self):
+        response = self.register(
+            "charlie",
+            "최지우",
+            "charlie@example.local",
+            "PatientPass456!",
+            password_confirm="different-password",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("비밀번호 확인이 일치하지 않습니다".encode(), response.data)
+        with self.app.app_context():
+            user = db.session.scalar(select(User).where(User.username == "charlie"))
+            self.assertIsNone(user)
+
+    def test_register_rejects_invalid_email_format(self):
+        response = self.register(
+            "charlie",
+            "최지우",
+            "not-an-email",
+            "PatientPass456!",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("이메일 형식이 올바르지 않습니다".encode(), response.data)
+        with self.app.app_context():
+            user = db.session.scalar(select(User).where(User.username == "charlie"))
+            self.assertIsNone(user)
+
+    def test_register_rejects_username_with_non_english_or_leading_number(self):
+        korean_response = self.register(
+            "홍길동",
+            "최지우",
+            "charlie@example.local",
+            "Pass12",
+        )
+        leading_number_response = self.register(
+            "1charlie",
+            "최지우",
+            "charlie2@example.local",
+            "Pass12",
+        )
+
+        self.assertEqual(korean_response.status_code, 400)
+        self.assertIn(
+            "아이디는 영문으로 시작하고 영문 또는 숫자만 사용할 수 있습니다".encode(),
+            korean_response.data,
+        )
+        self.assertEqual(leading_number_response.status_code, 400)
+        self.assertIn(
+            "아이디는 영문으로 시작하고 영문 또는 숫자만 사용할 수 있습니다".encode(),
+            leading_number_response.data,
+        )
+
+    def test_register_rejects_password_shorter_than_six_characters(self):
+        response = self.register(
+            "charlie",
+            "최지우",
+            "charlie@example.local",
+            "Pass1",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("비밀번호는 6자 이상이어야 합니다".encode(), response.data)
+        with self.app.app_context():
+            user = db.session.scalar(select(User).where(User.username == "charlie"))
+            self.assertIsNone(user)
+
+    def test_register_rejects_duplicate_username_or_email(self):
+        username_response = self.register(
+            "alice",
+            "최지우",
+            "charlie@example.local",
+            "PatientPass456!",
+        )
+        email_response = self.register(
+            "charlie",
+            "최지우",
+            "alice@example.local",
+            "PatientPass456!",
+        )
+
+        self.assertEqual(username_response.status_code, 409)
+        self.assertIn("이미 사용 중인 아이디 또는 이메일입니다".encode(), username_response.data)
+        self.assertEqual(email_response.status_code, 409)
+        self.assertIn("이미 사용 중인 아이디 또는 이메일입니다".encode(), email_response.data)
+
     def test_profile_returns_current_user(self):
         self.login("alice", "PatientPass123!")
 

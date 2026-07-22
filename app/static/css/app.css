@@ -395,6 +395,29 @@ p {
   font-weight: 700;
 }
 
+.form-error {
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 14px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+}
+
+.auth-switch {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.auth-switch a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .wide-form {
   max-width: 760px;
 }

@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import current_app
 from sqlalchemy import func, select
@@ -183,7 +183,12 @@ def seed_database():
         ),
     }
 
-    base_day = datetime(2026, 7, 20, 0, 0, tzinfo=timezone.utc)
+    base_day = (datetime.now(timezone.utc) + timedelta(days=7)).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
     slots = {
         "kim_0900": DoctorAvailabilitySlot(
             doctor=doctors["kim"],

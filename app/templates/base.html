@@ -26,6 +26,7 @@
             </form>
           {% else %}
             <a href="{{ url_for('auth.login_form') }}">로그인</a>
+            <a href="{{ url_for('auth.register_form') }}">회원가입</a>
           {% endif %}
         </div>
       </nav>

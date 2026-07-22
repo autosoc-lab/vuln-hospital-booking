@@ -17,5 +17,10 @@
 
       <button type="submit">로그인</button>
     </form>
+
+    <p class="auth-switch">
+      처음 방문하셨나요?
+      <a href="{{ url_for('auth.register_form') }}">회원가입</a>
+    </p>
   </section>
 {% endblock %}

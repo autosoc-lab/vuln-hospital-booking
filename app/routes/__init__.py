@@ -1,5 +1,6 @@
 import os
 
+import requests
 from flask import Blueprint, abort, current_app, jsonify, render_template, request
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -61,6 +62,30 @@ def clinic_guides():
         "clinic_guides.html",
         guides=guides,
         search_term=search_term,
+        error_message=error_message,
+    )
+
+
+@main_bp.get("/clinic-guides/external-preview")
+def external_preview_page():
+    url = request.args.get("url", "").strip()
+    content = None
+    status_code = None
+    error_message = None
+
+    if url:
+        try:
+            response = requests.get(url, timeout=5)
+            content = response.text[:5000]
+            status_code = response.status_code
+        except requests.RequestException:
+            error_message = "외부 자료를 가져오지 못했습니다."
+
+    return render_template(
+        "external_preview.html",
+        url=url,
+        content=content,
+        status_code=status_code,
         error_message=error_message,
     )
 

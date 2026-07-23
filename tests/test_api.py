@@ -847,9 +847,82 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(create_response.status_code, 302)
         list_response = self.client.get("/pdfs")
         self.assertEqual(list_response.status_code, 200)
-        self.assertIn("PDF 생성".encode(), list_response.data)
+        self.assertIn("진료 문서 작성".encode(), list_response.data)
         with self.app.app_context():
             self.assertEqual(db.session.query(GeneratedPdf).count(), 3)
+
+    def test_pdf_page_clinical_document_form_creates_pdf_without_soar_response(self):
+        self.login("dr.kim", "DoctorPass123!")
+        with self.app.app_context():
+            patient = db.session.scalar(select(User).where(User.username == "alice"))
+
+        create_response = self.client.post(
+            "/pdfs/new",
+            data={
+                "title": "김민지 진료 소견서",
+                "patient_public_id": patient.public_id,
+                "document_type": "진료 소견서",
+                "diagnosis": "급성 위염 의심",
+                "chief_complaint": "복통 및 오심",
+                "clinical_note": "상복부 압통이 있으며 추가 검사가 필요합니다.",
+                "recommendation": "위내시경 검사 예약 및 식이 조절을 권고합니다.",
+                "follow_up_plan": "검사 결과 확인 후 1주 내 재진합니다.",
+                "template_id": "standard_emr",
+                "accent_color": "blue",
+                "font_size": "normal",
+                "header_text": "Vulnerable Hospital Booking",
+                "footer_text": "<font color=\"green\">본 문서는 외부 제출용으로 발급되었습니다.</font>",
+                "include_logo": "1",
+                "include_guardian_summary": "1",
+                "include_qr": "1",
+            },
+            follow_redirects=False,
+        )
+
+        self.assertEqual(create_response.status_code, 302)
+
+        with self.app.app_context():
+            session_record = db.session.scalar(
+                select(UserSession).order_by(UserSession.created_at.desc())
+            )
+            self.assertIsNone(session_record.revoked_at)
+            self.assertEqual(db.session.query(GeneratedPdf).count(), 3)
+
+        list_response = self.client.get("/pdfs")
+        self.assertEqual(list_response.status_code, 200)
+
+    def test_pdf_page_records_reportlab_markup_probe_without_revoking_session(self):
+        self.login("dr.kim", "DoctorPass123!")
+        with self.app.app_context():
+            patient = db.session.scalar(select(User).where(User.username == "alice"))
+
+        create_response = self.client.post(
+            "/pdfs/new",
+            data={
+                "title": "김민지 진료 소견서",
+                "patient_public_id": patient.public_id,
+                "document_type": "진료 소견서",
+                "diagnosis": "급성 위염 의심",
+                "chief_complaint": "복통 및 오심",
+                "clinical_note": "상복부 압통이 있으며 추가 검사가 필요합니다.",
+                "recommendation": "위내시경 검사 예약 및 식이 조절을 권고합니다.",
+                "follow_up_plan": "검사 결과 확인 후 1주 내 재진합니다.",
+                "template_id": "standard_emr",
+                "footer_text": '<font color="[1, 0, 0] and \'red\'">exploit</font>',
+            },
+            follow_redirects=False,
+        )
+
+        self.assertEqual(create_response.status_code, 302)
+        with self.app.app_context():
+            event = db.session.scalar(
+                select(SecurityEvent).where(SecurityEvent.event_type == "REPORTLAB_MARKUP_PROBE")
+            )
+            self.assertIsNotNone(event)
+            session_record = db.session.scalar(
+                select(UserSession).order_by(UserSession.created_at.desc())
+            )
+            self.assertIsNone(session_record.revoked_at)
 
 
 if __name__ == "__main__":

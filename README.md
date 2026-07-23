@@ -7,7 +7,7 @@
 로컬에서 실행하려면 PostgreSQL이 먼저 실행 중이어야 합니다.
 
 ```bash
-python -m venv .venv
+python3.10 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 export DATABASE_URL="postgresql+psycopg://hospital:hospital@localhost:5433/hospital"

@@ -7,7 +7,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from app import storage
 from app.db import db
 from app.models import CLASSIFICATION_PUBLIC, MedicalDocument
-from app.security_events import record_security_event
 
 main_bp = Blueprint("main", __name__)
 SEARCH_SQL_ERROR_MESSAGE = "검색어를 처리할 수 없습니다. 검색 조건을 다시 확인해 주세요."
@@ -21,12 +20,6 @@ def index():
 @main_bp.get("/clinic-guides")
 def clinic_guides():
     search_term = request.args.get("q", "").strip()
-    record_security_event(
-        "SQLI_CLINIC_GUIDE_SEARCH_USED",
-        severity="MEDIUM",
-        details={"surface": "page", "query_length": len(search_term)},
-        commit=False,
-    )
 
     sql = f"""
         SELECT
@@ -61,11 +54,6 @@ def clinic_guides():
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
-        record_security_event(
-            "SQLI_QUERY_ERROR",
-            severity="LOW",
-            details={"surface": "clinic_guides_page"},
-        )
         guides = []
         error_message = SEARCH_SQL_ERROR_MESSAGE
 

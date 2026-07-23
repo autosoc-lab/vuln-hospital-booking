@@ -15,7 +15,6 @@ from app.models import (
     DoctorAvailabilitySlot,
     GeneratedPdf,
     MedicalDocument,
-    SecurityEvent,
     User,
     UserSession,
 )
@@ -34,8 +33,6 @@ class TestConfig:
     STORAGE_BACKEND = "local"
     DOCUMENT_STORAGE_BUCKET = ""
     AWS_REGION = "ap-northeast-2"
-    BULK_DOWNLOAD_WINDOW_SECONDS = 60
-    BULK_DOWNLOAD_THRESHOLD = 3
 
 
 class ApiTestCase(unittest.TestCase):
@@ -360,18 +357,6 @@ class ApiTestCase(unittest.TestCase):
         doctors = response.get_json()["doctors"]
         self.assertEqual(len(doctors), 3)
 
-    def test_vulnerable_doctors_search_records_security_event(self):
-        response = self.client.get("/api/doctors/search?q=정형외과")
-
-        self.assertEqual(response.status_code, 200)
-        with self.app.app_context():
-            event = db.session.scalar(
-                select(SecurityEvent).where(
-                    SecurityEvent.event_type == "SQLI_DOCTOR_SEARCH_USED"
-                )
-            )
-            self.assertIsNotNone(event)
-
     def test_public_clinic_guides_search_lists_only_public_documents(self):
         response = self.client.get("/api/public/clinic-guides/search?q=정형외과")
 
@@ -436,18 +421,6 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(response.mimetype, "application/pdf")
         self.assertEqual(response.data, b"%PDF admin only through sqli")
         response.close()
-
-    def test_vulnerable_public_clinic_guides_search_records_security_event(self):
-        response = self.client.get("/api/public/clinic-guides/search?q=정형외과")
-
-        self.assertEqual(response.status_code, 200)
-        with self.app.app_context():
-            event = db.session.scalar(
-                select(SecurityEvent).where(
-                    SecurityEvent.event_type == "SQLI_CLINIC_GUIDE_SEARCH_USED"
-                )
-            )
-            self.assertIsNotNone(event)
 
     def test_public_clinic_guides_search_returns_message_for_sql_errors(self):
         response = self.client.get(
@@ -570,19 +543,6 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(response.data, b"%PDF admin only")
         response.close()
 
-    def test_admin_can_view_security_events(self):
-        self.login("admin", "AdminPass123!")
-
-        response = self.client.get("/admin/security-events")
-
-        self.assertEqual(response.status_code, 200)
-        events = response.get_json()["security_events"]
-        self.assertEqual(len(events), 1)
-        self.assertEqual(events[0]["event_type"], "SESSION_CREATED")
-        self.assertEqual(events[0]["user"]["username"], "admin")
-        self.assertEqual(events[0]["user"]["role"], "ADMIN")
-        self.assertIsNotNone(events[0]["source_ip"])
-
     def test_admin_dashboard_renders_html_for_browser_requests(self):
         self.login("admin", "AdminPass123!")
 
@@ -609,15 +569,6 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("전체 문서".encode(), response.data)
         self.assertIn("소화기내과 진료의뢰서".encode(), response.data)
-
-    def test_admin_security_events_render_html_for_browser_requests(self):
-        self.login("admin", "AdminPass123!")
-
-        response = self.client.get("/admin/security-events", headers={"Accept": "text/html"})
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("보안 이벤트".encode(), response.data)
-        self.assertIn("SESSION_CREATED".encode(), response.data)
 
     def test_patient_can_create_appointment(self):
         self.login("alice", "PatientPass123!")
@@ -730,44 +681,6 @@ class ApiTestCase(unittest.TestCase):
         download_response.close()
         with self.app.app_context():
             self.assertEqual(db.session.query(MedicalDocument).count(), 5)
-
-    def test_bulk_document_download_triggers_soar_response(self):
-        self.login("alice", "PatientPass123!")
-        document_ids = []
-        for index in range(3):
-            upload_response = self.client.post(
-                "/api/storage/upload",
-                data={
-                    "file": (io.BytesIO(f"sample document {index}".encode()), f"sample-{index}.txt"),
-                    "title": f"샘플 업로드 {index}",
-                    "document_type": "테스트 문서",
-                },
-                content_type="multipart/form-data",
-            )
-            self.assertEqual(upload_response.status_code, 201)
-            document_ids.append(upload_response.get_json()["document"]["id"])
-
-        for document_id in document_ids:
-            download_response = self.client.get(f"/api/storage/download/{document_id}")
-            self.assertEqual(download_response.status_code, 200)
-            download_response.close()
-
-        with self.app.app_context():
-            event_types = {
-                event.event_type
-                for event in db.session.scalars(select(SecurityEvent)).all()
-            }
-            self.assertIn("BULK_DOCUMENT_DOWNLOAD", event_types)
-            self.assertIn("SOAR_IP_BLOCK_SIMULATED", event_types)
-            self.assertIn("SOAR_SESSION_REVOKED", event_types)
-            self.assertIn("SOAR_EVIDENCE_COLLECTED", event_types)
-            session_record = db.session.scalar(
-                select(UserSession).order_by(UserSession.created_at.desc())
-            )
-            self.assertIsNotNone(session_record.revoked_at)
-
-        response = self.client.get("/api/profile")
-        self.assertEqual(response.status_code, 302)
 
     def test_staff_upload_requires_patient_public_id(self):
         self.login("staff", "StaffPass123!")

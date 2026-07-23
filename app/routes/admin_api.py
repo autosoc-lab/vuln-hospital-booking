@@ -1,11 +1,9 @@
-import json
-
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
 from flask import Blueprint, jsonify, render_template, request
 
-from app.auth import admin_required, ensure_aware_utc
+from app.auth import admin_required
 from app.db import db
 from app.models import (
     Appointment,
@@ -16,7 +14,6 @@ from app.models import (
     ROLE_DOCTOR,
     ROLE_PATIENT,
     ROLE_STAFF,
-    SecurityEvent,
     User,
     UserSession,
     utc_now,
@@ -45,74 +42,6 @@ def active_session_count():
         .where(UserSession.revoked_at.is_(None))
         .where(UserSession.expires_at > utc_now())
     )
-
-
-def serialize_security_event(event_type, occurred_at, user_session):
-    user = user_session.user
-    return {
-        "event_type": event_type,
-        "occurred_at": isoformat(occurred_at),
-        "source_ip": user_session.source_ip,
-        "user_agent_hash": user_session.user_agent_hash,
-        "role_snapshot": user_session.role_snapshot,
-        "user": {
-            "id": user.public_id,
-            "username": user.username,
-            "role": user.role,
-        },
-    }
-
-
-def serialize_stored_security_event(event):
-    user = event.user
-    details = json.loads(event.detail_json or "{}")
-    return {
-        "event_type": event.event_type,
-        "severity": event.severity,
-        "occurred_at": isoformat(event.created_at),
-        "source_ip": event.source_ip,
-        "user_agent_hash": None,
-        "path": event.path,
-        "details": details,
-        "user": {
-            "id": user.public_id,
-            "username": user.username,
-            "role": user.role,
-        }
-        if user
-        else None,
-    }
-
-
-def session_security_events(user_sessions):
-    events = []
-    now = utc_now()
-    for user_session in user_sessions:
-        events.append(
-            serialize_security_event(
-                "SESSION_CREATED",
-                user_session.created_at,
-                user_session,
-            )
-        )
-        if user_session.revoked_at:
-            events.append(
-                serialize_security_event(
-                    "SESSION_REVOKED",
-                    user_session.revoked_at,
-                    user_session,
-                )
-            )
-        elif ensure_aware_utc(user_session.expires_at) <= now:
-            events.append(
-                serialize_security_event(
-                    "SESSION_EXPIRED",
-                    user_session.expires_at,
-                    user_session,
-                )
-            )
-
-    return sorted(events, key=lambda event: event["occurred_at"], reverse=True)
 
 
 @admin_api_bp.get("/admin")
@@ -174,27 +103,3 @@ def documents():
     if wants_html():
         return render_template("admin/documents.html", documents=documents)
     return jsonify({"documents": [serialize_document(document) for document in documents]})
-
-
-@admin_api_bp.get("/admin/security-events")
-@admin_required
-def security_events():
-    session_query = (
-        select(UserSession)
-        .options(joinedload(UserSession.user))
-        .order_by(UserSession.created_at.desc())
-    )
-    user_sessions = db.session.scalars(session_query).unique().all()
-    stored_query = (
-        select(SecurityEvent)
-        .options(joinedload(SecurityEvent.user))
-        .order_by(SecurityEvent.created_at.desc())
-    )
-    stored_events = db.session.scalars(stored_query).unique().all()
-    events = session_security_events(user_sessions) + [
-        serialize_stored_security_event(event) for event in stored_events
-    ]
-    events = sorted(events, key=lambda event: event["occurred_at"], reverse=True)
-    if wants_html():
-        return render_template("admin/security_events.html", events=events)
-    return jsonify({"security_events": events})

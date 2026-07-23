@@ -31,7 +31,6 @@ from app.models import (
     utc_now,
 )
 from app.pdf import render_text_pdf
-from app.security_events import detect_bulk_document_download, record_security_event
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 SEARCH_SQL_ERROR_MESSAGE = "검색어를 처리할 수 없습니다. 검색 조건을 다시 확인해 주세요."
@@ -258,15 +257,6 @@ def profile():
 def search_doctors():
     search_term = request.args.get("q", "").strip()
     department = request.args.get("department", "").strip()
-    record_security_event(
-        "SQLI_DOCTOR_SEARCH_USED",
-        severity="MEDIUM",
-        details={
-            "query_length": len(search_term),
-            "department_length": len(department),
-        },
-        commit=False,
-    )
 
     sql = """
         SELECT
@@ -300,11 +290,6 @@ def search_doctors():
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
-        record_security_event(
-            "SQLI_QUERY_ERROR",
-            severity="LOW",
-            details={"surface": "doctor_search_api"},
-        )
         return jsonify({"error": SEARCH_SQL_ERROR_MESSAGE}), 400
 
     return jsonify(
@@ -320,12 +305,6 @@ def search_doctors():
 @api_bp.get("/public/clinic-guides/search")
 def search_public_clinic_guides():
     search_term = request.args.get("q", "").strip()
-    record_security_event(
-        "SQLI_CLINIC_GUIDE_SEARCH_USED",
-        severity="MEDIUM",
-        details={"query_length": len(search_term)},
-        commit=False,
-    )
 
     sql = f"""
         SELECT
@@ -359,11 +338,6 @@ def search_public_clinic_guides():
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
-        record_security_event(
-            "SQLI_QUERY_ERROR",
-            severity="LOW",
-            details={"surface": "clinic_guides_api"},
-        )
         return jsonify({"error": SEARCH_SQL_ERROR_MESSAGE}), 400
 
     return jsonify({"clinic_guides": [serialize_public_guide(row) for row in rows]})
@@ -375,21 +349,9 @@ def preview_external_clinic_guide():
     if not url:
         return jsonify({"error": "url is required"}), 400
 
-    record_security_event(
-        "SSRF_EXTERNAL_PREVIEW_USED",
-        severity="MEDIUM",
-        details={"url": url},
-        commit=False,
-    )
-
     try:
         response = requests.get(url, timeout=5)
     except requests.RequestException:
-        record_security_event(
-            "SSRF_FETCH_ERROR",
-            severity="LOW",
-            details={"url": url},
-        )
         return jsonify({"error": "외부 자료를 가져오지 못했습니다."}), 502
 
     return jsonify(
@@ -406,13 +368,6 @@ def download_public_clinic_guide():
     document_id = request.args.get("document_id", "").strip()
     if not document_id:
         return jsonify({"error": "document_id is required"}), 400
-
-    record_security_event(
-        "SQLI_CLINIC_GUIDE_DOWNLOAD_USED",
-        severity="HIGH",
-        details={"document_id_length": len(document_id)},
-        commit=False,
-    )
 
     sql = f"""
         SELECT
@@ -432,11 +387,6 @@ def download_public_clinic_guide():
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
-        record_security_event(
-            "SQLI_QUERY_ERROR",
-            severity="LOW",
-            details={"surface": "clinic_guides_download_api"},
-        )
         return jsonify({"error": SEARCH_SQL_ERROR_MESSAGE}), 400
 
     if not row:
@@ -631,8 +581,6 @@ def download_document(public_id):
         abort(404)
     if not can_view_document(document):
         abort(403)
-
-    detect_bulk_document_download(document)
 
     return storage.send_stored_file(
         document.file_path,

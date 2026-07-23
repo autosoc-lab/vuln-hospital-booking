@@ -39,7 +39,6 @@ from app.models import (
     utc_now,
 )
 from app.pdf import render_text_pdf
-from app.security_events import record_security_event
 
 user_pages_bp = Blueprint("user_pages", __name__)
 SEARCH_SQL_ERROR_MESSAGE = "검색어를 처리할 수 없습니다. 검색 조건을 다시 확인해 주세요."
@@ -136,16 +135,6 @@ def owner_from_upload_form():
 def doctors():
     search_term = request.args.get("q", "").strip()
     department_name = request.args.get("department", "").strip()
-    record_security_event(
-        "SQLI_DOCTOR_SEARCH_USED",
-        severity="MEDIUM",
-        details={
-            "surface": "page",
-            "query_length": len(search_term),
-            "department_length": len(department_name),
-        },
-        commit=False,
-    )
 
     sql = """
         SELECT doctors.id AS id
@@ -176,11 +165,6 @@ def doctors():
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
-        record_security_event(
-            "SQLI_QUERY_ERROR",
-            severity="LOW",
-            details={"surface": "doctor_search_page"},
-        )
         doctor_ids = []
         error_message = SEARCH_SQL_ERROR_MESSAGE
 

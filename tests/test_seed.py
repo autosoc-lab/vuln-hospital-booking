@@ -19,8 +19,6 @@ class TestConfig:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     DOCUMENT_STORAGE_ROOT = ""
     STORAGE_HEALTHCHECK_PATH = ".healthcheck"
-    BULK_DOWNLOAD_WINDOW_SECONDS = 60
-    BULK_DOWNLOAD_THRESHOLD = 3
 
 
 class SeedTestCase(unittest.TestCase):

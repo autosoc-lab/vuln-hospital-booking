@@ -71,7 +71,6 @@ flask --app run seed-db
 | `/admin` | `GET` | 관리자 대시보드 요약 |
 | `/admin/appointments` | `GET` | 전체 예약 조회 |
 | `/admin/documents` | `GET` | 전체 문서 조회 |
-| `/admin/security-events` | `GET` | 애플리케이션 보안 이벤트 확인 |
 
 ## SQL Injection 실습 모드
 
@@ -83,18 +82,11 @@ flask --app run seed-db
 | `/api/doctors/search` | `GET` | 공개 의사 검색 |
 | `/api/public/clinic-guides/search` | `GET` | 공개 진료 안내문 검색 |
 
-현재 브랜치의 공개 검색 API들은 SQL Injection 공격 시나리오 재현을 위해 의도적으로 취약한 SQL 문자열 조합을 사용합니다. 공개 검색 API가 호출되면 `SQLI_DOCTOR_SEARCH_USED` 또는 `SQLI_CLINIC_GUIDE_SEARCH_USED` 보안 이벤트가 기록됩니다.
+현재 브랜치의 공개 검색 API들은 SQL Injection 공격 시나리오 재현을 위해 의도적으로 취약한 SQL 문자열 조합을 사용합니다.
 
 대응 단계에서는 이 취약 SQL 문자열 조합 코드를 제거하고 파라미터 바인딩 쿼리로 교체해 차단 효과를 보여주면 됩니다.
 
-보호된 문서 다운로드가 짧은 시간에 반복되면 `BULK_DOCUMENT_DOWNLOAD` 경보와 함께 SOAR 시뮬레이션 이벤트가 기록되고 현재 세션이 폐기됩니다.
-
-다운로드 상관분석 임계값은 다음 환경 변수로 조정할 수 있습니다.
-
-```bash
-export BULK_DOWNLOAD_WINDOW_SECONDS=60
-export BULK_DOWNLOAD_THRESHOLD=5
-```
+탐지는 애플리케이션이 자체적으로 이벤트를 남기는 방식이 아니라, 표준 요청 로그(`app/request_logging.py`)가 CloudWatch 등으로 전달되고 Wazuh가 그 로그를 분석해 판단하는 구조를 전제로 합니다.
 
 ## 인증 기능 확인
 

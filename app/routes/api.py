@@ -343,8 +343,9 @@ def search_public_clinic_guides():
     return jsonify({"clinic_guides": [serialize_public_guide(row) for row in rows]})
 
 
-@api_bp.get("/public/clinic-guides/external-preview")
-def preview_external_clinic_guide():
+@api_bp.get("/documents/referral-link-preview")
+@login_required
+def preview_referral_link():
     url = request.args.get("url", "").strip()
     if not url:
         return jsonify({"error": "url is required"}), 400
@@ -352,7 +353,7 @@ def preview_external_clinic_guide():
     try:
         response = requests.get(url, timeout=5)
     except requests.RequestException:
-        return jsonify({"error": "외부 자료를 가져오지 못했습니다."}), 502
+        return jsonify({"error": "진료의뢰서 링크를 가져오지 못했습니다."}), 502
 
     return jsonify(
         {

@@ -9,6 +9,7 @@ class Config:
     STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "local")
     DOCUMENT_STORAGE_BUCKET = os.environ.get("DOCUMENT_STORAGE_BUCKET", "")
     AWS_REGION = os.environ.get("AWS_REGION", "ap-northeast-2")
+    APP_LOG_FILE = os.environ.get("APP_LOG_FILE", "")
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "DATABASE_URL",
         "postgresql+psycopg://hospital:hospital@localhost:5432/hospital",

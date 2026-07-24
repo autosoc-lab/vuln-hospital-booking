@@ -51,11 +51,24 @@ def log_app_event(response):
     if query_string:
         event["query_string"] = query_string
 
-    current_app.logger.info(
-        "app_event %s",
-        json.dumps(event, ensure_ascii=False, sort_keys=True),
-    )
+    current_app.logger.info(json.dumps(event, ensure_ascii=False, sort_keys=True))
     return response
+
+
+def register_file_logging(app):
+    # 로그 파일이 지정된 경우(EC2 배포 환경) app.logger에 순수 JSON 라인만 쓰는
+    # FileHandler를 추가한다. Wazuh 에이전트가 이 파일을 log_format=json으로
+    # 직접 읽어가려면 줄마다 다른 텍스트가 섞이지 않은 순수 JSON이어야 한다.
+    log_file = app.config.get("APP_LOG_FILE")
+    if not log_file:
+        return
+
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    handler = logging.FileHandler(log_file)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    handler.setLevel(logging.INFO)
+    app.logger.addHandler(handler)
+    app.logger.setLevel(logging.INFO)
 
 
 def format_access_log_line(response):
@@ -127,6 +140,7 @@ def register_file_access_logging(app):
 
 
 def register_request_event_logging(app):
+    register_file_logging(app)
     app.before_request(start_app_event_timer)
     app.after_request(log_app_event)
     register_file_access_logging(app)

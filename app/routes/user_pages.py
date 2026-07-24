@@ -1,6 +1,7 @@
 import os
 from uuid import uuid4
 
+import requests
 from flask import (
     Blueprint,
     abort,
@@ -386,6 +387,31 @@ def download_document(public_id):
         file_path,
         as_attachment=True,
         download_name=os.path.basename(document.file_path),
+    )
+
+
+@user_pages_bp.get("/documents/referral-link-preview")
+@login_required
+def referral_link_preview():
+    url = request.args.get("url", "").strip()
+    content = None
+    status_code = None
+    error_message = None
+
+    if url:
+        try:
+            response = requests.get(url, timeout=5)
+            content = response.text[:5000]
+            status_code = response.status_code
+        except requests.RequestException:
+            error_message = "진료의뢰서 링크를 가져오지 못했습니다."
+
+    return render_template(
+        "referral_link_preview.html",
+        url=url,
+        content=content,
+        status_code=status_code,
+        error_message=error_message,
     )
 
 

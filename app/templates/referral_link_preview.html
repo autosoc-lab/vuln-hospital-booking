@@ -3,19 +3,19 @@
 {% block content %}
   <section class="section-heading split-heading">
     <div>
-      <p class="eyebrow">Clinic Guides</p>
-      <h1>외부 자료 가져오기</h1>
-      <p>협력 기관 홈페이지 등 외부 URL의 자료를 미리보기로 가져옵니다.</p>
+      <p class="eyebrow">Documents</p>
+      <h1>진료의뢰서 링크 확인</h1>
+      <p>협력 병원에서 전달받은 진료의뢰서 링크를 열람 전에 미리 확인합니다.</p>
     </div>
-    <a class="secondary-link" href="{{ url_for('main.clinic_guides') }}">진료 안내문</a>
+    <a class="secondary-link" href="{{ url_for('user_pages.documents') }}">문서함</a>
   </section>
 
-  <form class="filter-form" method="get" action="{{ url_for('main.external_preview_page') }}">
+  <form class="filter-form" method="get" action="{{ url_for('user_pages.referral_link_preview') }}">
     <label>
-      외부 자료 URL
-      <input name="url" type="text" value="{{ url }}" placeholder="https://partner-hospital.example.com/notice">
+      진료의뢰서 링크
+      <input name="url" type="text" value="{{ url }}" placeholder="https://partner-hospital.example.com/referral">
     </label>
-    <button type="submit">가져오기</button>
+    <button type="submit">확인하기</button>
   </form>
 
   {% if error_message %}

@@ -1,0 +1,146 @@
+<group name="local,flask,web,vuln_hospital,">
+
+  <!--
+    Expected JSON access log fields:
+    timestamp, event, srcip, method, path, url, http_version, status, size,
+    referer, user_agent, query_string, document_id.
+
+    Configure the Wazuh agent localfile with log_format=json so the built-in
+    JSON decoder extracts these fields directly.
+  -->
+
+  <rule id="100300" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="event">^access_request$</field>
+    <description>Flask JSON 웹 접근 로그</description>
+    <group>web_log,</group>
+  </rule>
+
+  <!-- 취약 검색 표면: 공개 진료 안내문 및 의사 검색 API/화면 -->
+
+  <rule id="100301" level="0">
+    <if_sid>100300</if_sid>
+    <field name="url" type="pcre2">^/(api/public/clinic-guides/search|clinic-guides|api/doctors/search|doctors)(\?|$)</field>
+    <options>no_log</options>
+    <description>취약 검색 요청 베이스라인</description>
+    <group>search_baseline,</group>
+  </rule>
+
+  <rule id="100302" level="10">
+    <if_sid>100301</if_sid>
+    <field name="url" type="pcre2">(?i)(%27|')(%29|\))?(\+|%20|\s)*or(\+|%20|\s)+1(\+|%20|\s)*(%3d|=)(\+|%20|\s)*1</field>
+    <description>검색 기능에서 Boolean-based SQL Injection 프로빙 탐지: $(url) (출발지: $(srcip))</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>sqli,attack_attempt,search,</group>
+  </rule>
+
+  <rule id="100303" level="13">
+    <if_sid>100301</if_sid>
+    <field name="url" type="pcre2">(?i)classification(\+|%20|\s)*(%3d|=)(\+|%20|\s)*(%27|')?admin_only</field>
+    <description>검색 기능에서 ADMIN_ONLY 문서 존재 여부를 SQLi로 프로빙: $(url) (출발지: $(srcip))</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1592</id>
+    </mitre>
+    <group>sqli,targeted_recon,admin_document_probe,</group>
+  </rule>
+
+  <rule id="100309" level="11">
+    <if_sid>100301</if_sid>
+    <field name="url" type="pcre2">(?i)(%27|')(%29|\))?(\+|%20|\s)*union(\+|%20|\s)+select</field>
+    <description>검색 기능에서 UNION 기반 SQL Injection 프로빙 탐지: $(url) (출발지: $(srcip))</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>sqli,attack_attempt,union_sqli,search,</group>
+  </rule>
+
+  <rule id="100312" level="8">
+    <if_sid>100301</if_sid>
+    <field name="status">^(200|400|500)$</field>
+    <field name="url" type="pcre2">(?i)(%27|')|(%22|")|(%2d%2d|--)|(%23|#)|(%3b|;)|union(\+|%20|\s)+select|information_schema|sqlite_master</field>
+    <description>검색 기능에서 SQL Injection 의심 특수문자/키워드 관찰: $(url) (출발지: $(srcip))</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>sqli,attack_attempt,search,</group>
+  </rule>
+
+  <!-- 실제 프로젝트 다운로드 표면 -->
+
+  <rule id="100304" level="0">
+    <if_sid>100300</if_sid>
+    <field name="url" type="pcre2">^/(api/storage/download/[^/?]+|documents/[^/?]+/download|clinic-guides/[^/?]+/document)(\?|$)</field>
+    <options>no_log</options>
+    <description>문서 다운로드 요청 베이스라인</description>
+    <group>document_download_baseline,</group>
+  </rule>
+
+  <rule id="100305" level="10">
+    <if_sid>100304</if_sid>
+    <field name="status">^403$</field>
+    <description>권한 없는 문서 다운로드 접근 시도: $(url) (출발지: $(srcip))</description>
+    <mitre>
+      <id>T1213</id>
+    </mitre>
+    <group>document_access,forbidden,attack_attempt,</group>
+  </rule>
+
+  <rule id="100306" level="12">
+    <if_sid>100304</if_sid>
+    <field name="status">^200$</field>
+    <description>문서 다운로드 성공: $(url) (출발지: $(srcip))</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>document_download,data_access,</group>
+  </rule>
+
+  <rule id="100307" level="15" frequency="1" timeframe="600">
+    <if_sid>100306</if_sid>
+    <if_matched_sid>100303</if_matched_sid>
+    <same_source_ip />
+    <description>공격 시나리오 전 과정 의심: ADMIN_ONLY 정찰 이후 문서 다운로드 성공 (출발지: $(srcip))</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1005</id>
+    </mitre>
+    <group>sqli,kill_chain_suspected,critical,</group>
+  </rule>
+
+  <rule id="100308" level="12" frequency="5" timeframe="120" ignore="180">
+    <if_matched_sid>100306</if_matched_sid>
+    <same_source_ip />
+    <different_field>document_id</different_field>
+    <description>대량 문서 다운로드 탐지: $(srcip)에서 120초 내 서로 다른 문서 5개 이상 다운로드</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>bulk_download,data_collection,</group>
+  </rule>
+
+  <!-- 외부 수집 서버 로그가 같은 디코더로 들어오는 경우에만 사용 -->
+
+  <rule id="100310" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="event">^access_request$</field>
+    <field name="url">^/upload$</field>
+    <options>no_log</options>
+    <description>수집 서버 업로드 요청 베이스라인</description>
+    <group>lab_collector_baseline,</group>
+  </rule>
+
+  <rule id="100311" level="14">
+    <if_sid>100310</if_sid>
+    <field name="method">^POST$</field>
+    <field name="status">^200$</field>
+    <description>외부 수집 서버로 파일 업로드 성공 - 데이터 유출 확인: $(srcip)</description>
+    <mitre>
+      <id>T1041</id>
+    </mitre>
+    <group>data_exfiltration,critical,</group>
+  </rule>
+
+</group>

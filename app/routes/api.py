@@ -1,5 +1,5 @@
-import io
 import os
+import tempfile
 from uuid import uuid4
 
 import requests
@@ -30,7 +30,7 @@ from app.models import (
     User,
     utc_now,
 )
-from app.pdf import render_text_pdf
+from app.pdf import PdfRenderError, render_text_pdf
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 SEARCH_SQL_ERROR_MESSAGE = "검색어를 처리할 수 없습니다. 검색 조건을 다시 확인해 주세요."
@@ -500,9 +500,17 @@ def render_pdf():
     relative_dir = safe_join("generated_pdfs", g.current_user.public_id)
     relative_path = safe_join(relative_dir, filename)
 
-    buffer = io.BytesIO()
-    render_text_pdf(buffer, title, body)
-    storage.save_bytes(relative_path, buffer.getvalue())
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    tmp.close()
+    try:
+        try:
+            render_text_pdf(tmp.name, title, body)
+        except PdfRenderError as exc:
+            return jsonify({"error": f"PDF 렌더링 중 오류가 발생했습니다: {exc}"}), 500
+        with open(tmp.name, "rb") as fh:
+            storage.save_bytes(relative_path, fh.read())
+    finally:
+        os.unlink(tmp.name)
 
     generated_pdf = GeneratedPdf(
         generated_by_user=g.current_user,

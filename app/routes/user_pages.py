@@ -38,7 +38,7 @@ from app.models import (
     User,
     utc_now,
 )
-from app.pdf import render_text_pdf
+from app.pdf import PdfRenderError, render_text_pdf
 
 user_pages_bp = Blueprint("user_pages", __name__)
 SEARCH_SQL_ERROR_MESSAGE = "검색어를 처리할 수 없습니다. 검색 조건을 다시 확인해 주세요."
@@ -76,6 +76,26 @@ def can_view_generated_pdf(generated_pdf):
     if g.current_user.role in {ROLE_ADMIN, ROLE_STAFF}:
         return True
     return generated_pdf.generated_by_user_id == g.current_user.id
+
+
+def clinical_document_body(form, patient_name=""):
+    sections = [
+        ("머리말", form.get("header_text", "").strip()),
+        ("환자", patient_name),
+        ("문서 유형", form.get("document_type", "").strip()),
+        ("진단명", form.get("diagnosis", "").strip()),
+        ("주호소", form.get("chief_complaint", "").strip()),
+        ("진료 소견", form.get("clinical_note", "").strip()),
+        ("처방/권고 사항", form.get("recommendation", "").strip()),
+        ("추적 관찰 계획", form.get("follow_up_plan", "").strip()),
+        ("꼬리말", form.get("footer_text", "").strip()),
+    ]
+    return "\n\n".join(f"{label}\n{value}" for label, value in sections if value)
+
+
+def has_reportlab_markup_probe(value):
+    lowered = value.lower()
+    return "<font" in lowered and "color=" in lowered
 
 
 def appointment_query():
@@ -441,10 +461,30 @@ def pdfs():
 @login_required
 def new_pdf():
     if request.method == "POST":
-        title = request.form.get("title", "generated-document").strip()[:120]
-        body = request.form.get("body", "").strip()
+        patient_public_id = request.form.get("patient_public_id", "").strip()
+        selected_patient = None
+        if g.current_user.role == ROLE_PATIENT:
+            selected_patient = g.current_user
+        elif patient_public_id:
+            selected_patient = db.session.scalar(
+                select(User).where(
+                    User.public_id == patient_public_id,
+                    User.role == ROLE_PATIENT,
+                )
+            )
+
+        document_type = request.form.get("document_type", "진료 소견서").strip()
+        title = request.form.get("title", "").strip()
+        if not title:
+            patient_name = selected_patient.full_name if selected_patient else "환자"
+            title = f"{patient_name} {document_type}"
+        title = title[:120]
+        body = clinical_document_body(
+            request.form,
+            patient_name=selected_patient.full_name if selected_patient else "",
+        )
         if not body:
-            flash("PDF 본문을 입력해 주세요.", "error")
+            flash("진료 문서 내용을 입력해 주세요.", "error")
             return redirect(url_for("user_pages.new_pdf"))
 
         filename_base = secure_filename(title) or "generated-document"
@@ -455,7 +495,17 @@ def new_pdf():
         absolute_path = safe_join(storage_root(), relative_path)
         os.makedirs(absolute_dir, exist_ok=True)
 
-        render_text_pdf(absolute_path, title, body)
+        footer_text = request.form.get("footer_text", "")
+        if has_reportlab_markup_probe(footer_text):
+            current_app.logger.warning("reportlab_probe_footer_text=%r", footer_text)
+
+        try:
+            render_text_pdf(absolute_path, title, body)
+        except PdfRenderError as exc:
+            db.session.rollback()
+            current_app.logger.warning("pdf_render_failed: %s", exc)
+            flash("PDF 렌더링 중 오류가 발생했습니다.", "error")
+            return redirect(url_for("user_pages.new_pdf"))
 
         generated_pdf = GeneratedPdf(
             generated_by_user=g.current_user,
@@ -465,10 +515,17 @@ def new_pdf():
         db.session.add(generated_pdf)
         db.session.commit()
 
-        flash("PDF가 생성되었습니다.", "success")
+        flash("진료 문서가 생성되었습니다.", "success")
         return redirect(url_for("user_pages.pdfs"))
 
-    return render_template("pdf_new.html")
+    patients = []
+    if g.current_user.role in {ROLE_ADMIN, ROLE_STAFF, ROLE_DOCTOR}:
+        patients = db.session.scalars(
+            select(User)
+            .where(User.role == ROLE_PATIENT)
+            .order_by(User.full_name.asc())
+        ).all()
+    return render_template("pdf_new.html", patients=patients)
 
 
 @user_pages_bp.get("/pdfs/<public_id>/download")

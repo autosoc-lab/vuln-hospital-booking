@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import unittest
 
+from flask import request
 from sqlalchemy import select
 
 from app import create_app
@@ -19,6 +20,7 @@ from app.models import (
     UserSession,
 )
 from app.pdf import KOREAN_FONT_NAME
+from app.request_logging import format_access_log_line
 from app.seed import seed_database
 
 
@@ -33,6 +35,9 @@ class TestConfig:
     STORAGE_BACKEND = "local"
     DOCUMENT_STORAGE_BUCKET = ""
     AWS_REGION = "ap-northeast-2"
+    ACCESS_LOG_PATH = None
+    ACCESS_LOG_MAX_BYTES = 10 * 1024 * 1024
+    ACCESS_LOG_BACKUP_COUNT = 5
 
 
 class ApiTestCase(unittest.TestCase):
@@ -238,6 +243,75 @@ class ApiTestCase(unittest.TestCase):
             response = self.client.get("/static/css/app.css")
 
         self.assertIn(response.status_code, {200, 304})
+
+    def test_requests_can_emit_file_access_log(self):
+        access_log_path = os.path.join(self.storage_dir, "logs", "access.log")
+        access_log_config = type(
+            "AccessLogConfig",
+            (TestConfig,),
+            {"ACCESS_LOG_PATH": access_log_path},
+        )
+        app = create_app(access_log_config)
+        client = app.test_client()
+
+        response = client.get(
+            "/static/css/app.css?q=%25%27)%20OR%201=1%20--",
+            headers={"User-Agent": "sqlmap/1.6", "X-Forwarded-For": "192.168.1.10"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        response.close()
+        with open(access_log_path, encoding="utf-8") as handle:
+            log_line = handle.read()
+        event = json.loads(log_line)
+        self.assertEqual(event["event"], "access_request")
+        self.assertEqual(event["srcip"], "192.168.1.10")
+        self.assertEqual(event["method"], "GET")
+        self.assertEqual(event["path"], "/static/css/app.css")
+        self.assertEqual(event["url"], "/static/css/app.css?q=%25%27)%20OR%201=1%20--")
+        self.assertEqual(event["query_string"], "q=%25%27)%20OR%201=1%20--")
+        self.assertEqual(event["http_version"], "HTTP/1.1")
+        self.assertEqual(event["status"], 200)
+        self.assertEqual(event["referer"], "-")
+        self.assertEqual(event["user_agent"], "sqlmap/1.6")
+        self.assertIn("size", event)
+        self.assertIn("timestamp", event)
+
+    def test_file_access_log_preserves_quoted_header_values_as_json(self):
+        access_log_path = os.path.join(self.storage_dir, "logs", "access.log")
+        access_log_config = type(
+            "AccessLogConfig",
+            (TestConfig,),
+            {"ACCESS_LOG_PATH": access_log_path},
+        )
+        app = create_app(access_log_config)
+        client = app.test_client()
+
+        response = client.get(
+            "/static/css/app.css",
+            headers={
+                "Referer": 'https://example.test/from"quote',
+                "User-Agent": 'scanner "probe" \\ test',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        response.close()
+        with open(access_log_path, encoding="utf-8") as handle:
+            log_line = handle.read()
+        event = json.loads(log_line)
+        self.assertEqual(event["referer"], 'https://example.test/from"quote')
+        self.assertEqual(event["user_agent"], 'scanner "probe" \\ test')
+
+    def test_file_access_log_includes_document_id_for_download_routes(self):
+        with self.app.test_request_context("/api/storage/download/doc-123"):
+            request.view_args = {"public_id": "doc-123"}
+            response = self.app.response_class("ok", status=200)
+
+            event = json.loads(format_access_log_line(response))
+
+        self.assertEqual(event["document_id"], "doc-123")
+        self.assertEqual(event["url"], "/api/storage/download/doc-123")
 
     def test_index_page_renders_service_home(self):
         response = self.client.get("/")
@@ -763,9 +837,78 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(create_response.status_code, 302)
         list_response = self.client.get("/pdfs")
         self.assertEqual(list_response.status_code, 200)
-        self.assertIn("PDF 생성".encode(), list_response.data)
+        self.assertIn("진료 문서 작성".encode(), list_response.data)
         with self.app.app_context():
             self.assertEqual(db.session.query(GeneratedPdf).count(), 3)
+
+    def test_pdf_page_clinical_document_form_creates_pdf_without_soar_response(self):
+        self.login("dr.kim", "DoctorPass123!")
+        with self.app.app_context():
+            patient = db.session.scalar(select(User).where(User.username == "alice"))
+
+        create_response = self.client.post(
+            "/pdfs/new",
+            data={
+                "title": "김민지 진료 소견서",
+                "patient_public_id": patient.public_id,
+                "document_type": "진료 소견서",
+                "diagnosis": "급성 위염 의심",
+                "chief_complaint": "복통 및 오심",
+                "clinical_note": "상복부 압통이 있으며 추가 검사가 필요합니다.",
+                "recommendation": "위내시경 검사 예약 및 식이 조절을 권고합니다.",
+                "follow_up_plan": "검사 결과 확인 후 1주 내 재진합니다.",
+                "template_id": "standard_emr",
+                "accent_color": "blue",
+                "font_size": "normal",
+                "header_text": "Vulnerable Hospital Booking",
+                "footer_text": "<font color=\"green\">본 문서는 외부 제출용으로 발급되었습니다.</font>",
+                "include_logo": "1",
+                "include_guardian_summary": "1",
+                "include_qr": "1",
+            },
+            follow_redirects=False,
+        )
+
+        self.assertEqual(create_response.status_code, 302)
+
+        with self.app.app_context():
+            session_record = db.session.scalar(
+                select(UserSession).order_by(UserSession.created_at.desc())
+            )
+            self.assertIsNone(session_record.revoked_at)
+            self.assertEqual(db.session.query(GeneratedPdf).count(), 3)
+
+        list_response = self.client.get("/pdfs")
+        self.assertEqual(list_response.status_code, 200)
+
+    def test_pdf_page_records_reportlab_markup_probe_without_revoking_session(self):
+        self.login("dr.kim", "DoctorPass123!")
+        with self.app.app_context():
+            patient = db.session.scalar(select(User).where(User.username == "alice"))
+
+        create_response = self.client.post(
+            "/pdfs/new",
+            data={
+                "title": "김민지 진료 소견서",
+                "patient_public_id": patient.public_id,
+                "document_type": "진료 소견서",
+                "diagnosis": "급성 위염 의심",
+                "chief_complaint": "복통 및 오심",
+                "clinical_note": "상복부 압통이 있으며 추가 검사가 필요합니다.",
+                "recommendation": "위내시경 검사 예약 및 식이 조절을 권고합니다.",
+                "follow_up_plan": "검사 결과 확인 후 1주 내 재진합니다.",
+                "template_id": "standard_emr",
+                "footer_text": '<font color="[1, 0, 0] and \'red\'">exploit</font>',
+            },
+            follow_redirects=False,
+        )
+
+        self.assertEqual(create_response.status_code, 302)
+        with self.app.app_context():
+            session_record = db.session.scalar(
+                select(UserSession).order_by(UserSession.created_at.desc())
+            )
+            self.assertIsNone(session_record.revoked_at)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -131,9 +132,14 @@ class ApiTestCase(unittest.TestCase):
         response.close()
         with open(access_log_path, encoding="utf-8") as handle:
             log_line = handle.read()
-        self.assertIn(
-            '192.168.1.10 - "GET /static/css/app.css?q=%25%27)%20OR%201=1%20-- HTTP/1.1" 200 - "sqlmap/1.6"',
+        self.assertRegex(
             log_line,
+            re.compile(
+                r'^192\.168\.1\.10 - - '
+                r'\[\d{2}/[A-Z][a-z]{2}/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4}\] '
+                r'"GET /static/css/app\.css\?q=%25%27\)%20OR%201=1%20-- HTTP/1\.1" '
+                r'200 (\d+|-) "-" "sqlmap/1\.6"\n?$'
+            ),
         )
 
     def test_index_page_renders_service_home(self):

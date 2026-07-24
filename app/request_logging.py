@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 
 from flask import current_app, g, request
@@ -64,11 +65,15 @@ def format_access_log_line(response):
         path = f"{path}?{query_string}"
 
     remote_addr = request.headers.get("X-Forwarded-For", request.remote_addr) or "-"
+    content_length = response.calculate_content_length()
+    response_size = content_length if content_length is not None else "-"
+    referer = request.referrer or "-"
     user_agent = request.user_agent.string or "-"
     protocol = request.environ.get("SERVER_PROTOCOL", "HTTP/1.1")
+    timestamp = datetime.now(timezone.utc).astimezone().strftime("%d/%b/%Y:%H:%M:%S %z")
     return (
-        f'{remote_addr} - "{request.method} {path} {protocol}" '
-        f'{response.status_code} - "{user_agent}"'
+        f'{remote_addr} - - [{timestamp}] "{request.method} {path} {protocol}" '
+        f'{response.status_code} {response_size} "{referer}" "{user_agent}"'
     )
 
 

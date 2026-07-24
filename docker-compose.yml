@@ -9,6 +9,8 @@ services:
       FLASK_DEBUG: "1"
       PORT: "5000"
       DATABASE_URL: "postgresql+psycopg://hospital:hospital@db:5432/hospital"
+    volumes:
+      - ./logs:/var/log/app
     depends_on:
       - db
 

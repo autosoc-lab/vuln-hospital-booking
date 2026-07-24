@@ -208,8 +208,8 @@ class ApiTestCase(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        log_line = next(line for line in captured.output if "app_event " in line)
-        event = json.loads(log_line.split("app_event ", 1)[1])
+        log_line = next(line for line in captured.output if '"event": "app_request"' in line)
+        event = json.loads(log_line[log_line.index("{"):])
         self.assertEqual(event["event"], "app_request")
         self.assertEqual(event["method"], "GET")
         self.assertEqual(event["path"], "/api/profile")
@@ -226,8 +226,8 @@ class ApiTestCase(unittest.TestCase):
             response = self.client.get("/profile")
 
         self.assertEqual(response.status_code, 200)
-        log_line = next(line for line in captured.output if "app_event " in line)
-        event = json.loads(log_line.split("app_event ", 1)[1])
+        log_line = next(line for line in captured.output if '"event": "app_request"' in line)
+        event = json.loads(log_line[log_line.index("{"):])
         self.assertEqual(event["event"], "app_request")
         self.assertEqual(event["path"], "/profile")
         self.assertEqual(event["endpoint"], "user_pages.profile")

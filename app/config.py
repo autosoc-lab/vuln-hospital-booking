@@ -13,3 +13,6 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     BULK_DOWNLOAD_WINDOW_SECONDS = int(os.environ.get("BULK_DOWNLOAD_WINDOW_SECONDS", "60"))
     BULK_DOWNLOAD_THRESHOLD = int(os.environ.get("BULK_DOWNLOAD_THRESHOLD", "5"))
+    ACCESS_LOG_PATH = os.environ.get("ACCESS_LOG_PATH", "/var/log/app/access.log")
+    ACCESS_LOG_MAX_BYTES = int(os.environ.get("ACCESS_LOG_MAX_BYTES", str(10 * 1024 * 1024)))
+    ACCESS_LOG_BACKUP_COUNT = int(os.environ.get("ACCESS_LOG_BACKUP_COUNT", "5"))

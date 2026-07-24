@@ -32,6 +32,9 @@ class TestConfig:
     STORAGE_HEALTHCHECK_PATH = ".healthcheck"
     BULK_DOWNLOAD_WINDOW_SECONDS = 60
     BULK_DOWNLOAD_THRESHOLD = 3
+    ACCESS_LOG_PATH = None
+    ACCESS_LOG_MAX_BYTES = 10 * 1024 * 1024
+    ACCESS_LOG_BACKUP_COUNT = 5
 
 
 class ApiTestCase(unittest.TestCase):
@@ -108,6 +111,30 @@ class ApiTestCase(unittest.TestCase):
             response = self.client.get("/static/css/app.css")
 
         self.assertIn(response.status_code, {200, 304})
+
+    def test_requests_can_emit_file_access_log(self):
+        access_log_path = os.path.join(self.storage_dir, "logs", "access.log")
+        access_log_config = type(
+            "AccessLogConfig",
+            (TestConfig,),
+            {"ACCESS_LOG_PATH": access_log_path},
+        )
+        app = create_app(access_log_config)
+        client = app.test_client()
+
+        response = client.get(
+            "/static/css/app.css?q=%25%27)%20OR%201=1%20--",
+            headers={"User-Agent": "sqlmap/1.6", "X-Forwarded-For": "192.168.1.10"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        response.close()
+        with open(access_log_path, encoding="utf-8") as handle:
+            log_line = handle.read()
+        self.assertIn(
+            '192.168.1.10 - "GET /static/css/app.css?q=%25%27)%20OR%201=1%20-- HTTP/1.1" 200 - "sqlmap/1.6"',
+            log_line,
+        )
 
     def test_index_page_renders_service_home(self):
         response = self.client.get("/")

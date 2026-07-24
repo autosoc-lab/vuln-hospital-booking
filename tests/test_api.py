@@ -1,11 +1,11 @@
 import io
 import json
 import os
-import re
 import shutil
 import tempfile
 import unittest
 
+from flask import request
 from sqlalchemy import select
 
 from app import create_app
@@ -20,6 +20,7 @@ from app.models import (
     UserSession,
 )
 from app.pdf import KOREAN_FONT_NAME
+from app.request_logging import format_access_log_line
 from app.seed import seed_database
 
 
@@ -132,15 +133,55 @@ class ApiTestCase(unittest.TestCase):
         response.close()
         with open(access_log_path, encoding="utf-8") as handle:
             log_line = handle.read()
-        self.assertRegex(
-            log_line,
-            re.compile(
-                r'^192\.168\.1\.10 - - '
-                r'\[\d{2}/[A-Z][a-z]{2}/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4}\] '
-                r'"GET /static/css/app\.css\?q=%25%27\)%20OR%201=1%20-- HTTP/1\.1" '
-                r'200 (\d+|-) "-" "sqlmap/1\.6"\n?$'
-            ),
+        event = json.loads(log_line)
+        self.assertEqual(event["event"], "access_request")
+        self.assertEqual(event["srcip"], "192.168.1.10")
+        self.assertEqual(event["method"], "GET")
+        self.assertEqual(event["path"], "/static/css/app.css")
+        self.assertEqual(event["url"], "/static/css/app.css?q=%25%27)%20OR%201=1%20--")
+        self.assertEqual(event["query_string"], "q=%25%27)%20OR%201=1%20--")
+        self.assertEqual(event["http_version"], "HTTP/1.1")
+        self.assertEqual(event["status"], 200)
+        self.assertEqual(event["referer"], "-")
+        self.assertEqual(event["user_agent"], "sqlmap/1.6")
+        self.assertIn("size", event)
+        self.assertIn("timestamp", event)
+
+    def test_file_access_log_preserves_quoted_header_values_as_json(self):
+        access_log_path = os.path.join(self.storage_dir, "logs", "access.log")
+        access_log_config = type(
+            "AccessLogConfig",
+            (TestConfig,),
+            {"ACCESS_LOG_PATH": access_log_path},
         )
+        app = create_app(access_log_config)
+        client = app.test_client()
+
+        response = client.get(
+            "/static/css/app.css",
+            headers={
+                "Referer": 'https://example.test/from"quote',
+                "User-Agent": 'scanner "probe" \\ test',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        response.close()
+        with open(access_log_path, encoding="utf-8") as handle:
+            log_line = handle.read()
+        event = json.loads(log_line)
+        self.assertEqual(event["referer"], 'https://example.test/from"quote')
+        self.assertEqual(event["user_agent"], 'scanner "probe" \\ test')
+
+    def test_file_access_log_includes_document_id_for_download_routes(self):
+        with self.app.test_request_context("/api/storage/download/doc-123"):
+            request.view_args = {"public_id": "doc-123"}
+            response = self.app.response_class("ok", status=200)
+
+            event = json.loads(format_access_log_line(response))
+
+        self.assertEqual(event["document_id"], "doc-123")
+        self.assertEqual(event["url"], "/api/storage/download/doc-123")
 
     def test_index_page_renders_service_home(self):
         response = self.client.get("/")

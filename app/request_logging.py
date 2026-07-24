@@ -66,15 +66,33 @@ def format_access_log_line(response):
 
     remote_addr = request.headers.get("X-Forwarded-For", request.remote_addr) or "-"
     content_length = response.calculate_content_length()
-    response_size = content_length if content_length is not None else "-"
-    referer = request.referrer or "-"
-    user_agent = request.user_agent.string or "-"
+    response_size = content_length if content_length is not None else None
     protocol = request.environ.get("SERVER_PROTOCOL", "HTTP/1.1")
-    timestamp = datetime.now(timezone.utc).astimezone().strftime("%d/%b/%Y:%H:%M:%S %z")
-    return (
-        f'{remote_addr} - - [{timestamp}] "{request.method} {path} {protocol}" '
-        f'{response.status_code} {response_size} "{referer}" "{user_agent}"'
-    )
+    event = {
+        "timestamp": datetime.now(timezone.utc).astimezone().isoformat(),
+        "event": "access_request",
+        "srcip": remote_addr,
+        "method": request.method,
+        "path": request.path,
+        "url": path,
+        "http_version": protocol,
+        "status": response.status_code,
+        "size": response_size,
+        "referer": request.referrer or "-",
+        "user_agent": request.user_agent.string or "-",
+    }
+
+    if query_string:
+        event["query_string"] = query_string
+
+    view_args = request.view_args or {}
+    document_id = view_args.get("public_id")
+    if document_id and request.path.startswith(
+        ("/api/storage/download/", "/documents/", "/clinic-guides/")
+    ):
+        event["document_id"] = document_id
+
+    return json.dumps(event, ensure_ascii=False, sort_keys=True)
 
 
 def register_file_access_logging(app):
